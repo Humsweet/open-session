@@ -34,18 +34,21 @@ export function ToolBadge({ tool }: { tool: ToolType }) {
   );
 }
 
-export function StatusBadge({ status }: { status: 'open' | 'closed' }) {
-  const isOpen = status === 'open';
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  open: { label: 'Open', color: 'var(--success)', bg: 'var(--success-subtle)' },
+  closed: { label: 'Closed', color: 'var(--text-tertiary)', bg: 'var(--bg-tertiary)' },
+  dropped: { label: 'Dropped', color: 'var(--danger)', bg: 'var(--danger-subtle)' },
+};
+
+export function StatusBadge({ status }: { status: string }) {
+  const config = statusConfig[status] || statusConfig.closed;
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
-      style={{
-        backgroundColor: isOpen ? 'var(--success-subtle)' : 'var(--bg-tertiary)',
-        color: isOpen ? 'var(--success)' : 'var(--text-tertiary)',
-      }}
+      style={{ backgroundColor: config.bg, color: config.color }}
     >
-      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: isOpen ? 'var(--success)' : 'var(--text-tertiary)' }} />
-      {isOpen ? 'Open' : 'Closed'}
+      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.color }} />
+      {config.label}
     </span>
   );
 }

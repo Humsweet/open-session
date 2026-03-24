@@ -1,5 +1,5 @@
 export type ToolType = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
-export type SessionStatus = 'open' | 'closed';
+export type SessionStatus = 'open' | 'closed' | 'dropped';
 
 export interface UnifiedSession {
   id: string;
@@ -21,6 +21,13 @@ export interface SessionMessage {
   content: string;
   timestamp?: string;
   toolName?: string;
+  // Rich block fields (populated by Claude parser)
+  blockType?: 'text' | 'thinking' | 'tool_call' | 'tool_result';
+  toolInput?: Record<string, unknown>;
+  toolCallId?: string;
+  isError?: boolean;
+  isRedacted?: boolean;
+  rawJson?: string;
 }
 
 export interface SessionDetail extends UnifiedSession {

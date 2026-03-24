@@ -6,8 +6,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const toolFilter = searchParams.get('tool') as ToolType | null;
-    const statusFilter = searchParams.get('status') as 'open' | 'closed' | null;
+    const statusFilter = searchParams.get('status') as 'open' | 'closed' | 'dropped' | null;
     const search = searchParams.get('search')?.toLowerCase();
+    const sortBy = searchParams.get('sortBy') || 'updatedAt';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
 
     let sessions = await scanAllSessions(toolFilter || undefined);
 
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
       const state = stateMap.get(s.id);
       return {
         ...s,
-        status: (state?.status as 'open' | 'closed') || s.status,
+        status: (state?.status as 'open' | 'closed' | 'dropped') || s.status,
         summary: state?.summary || s.summary,
         title: state?.custom_title || s.title,
       };
@@ -43,6 +45,14 @@ export async function GET(request: NextRequest) {
         s.cwd.toLowerCase().includes(search)
       );
     }
+
+    // Apply sorting
+    const field = sortBy as 'updatedAt' | 'createdAt';
+    sessions.sort((a, b) => {
+      const ta = new Date(a[field] || a.updatedAt).getTime();
+      const tb = new Date(b[field] || b.updatedAt).getTime();
+      return sortOrder === 'asc' ? ta - tb : tb - ta;
+    });
 
     return NextResponse.json({ sessions, total: sessions.length });
   } catch (error) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { UnifiedSession, ToolType } from '@/lib/parsers/types';
-import { FilterBar } from './filter-bar';
+import { FilterBar, FilterState } from './filter-bar';
 import { SessionCard } from './session-card';
 import { RefreshCw, Inbox } from 'lucide-react';
 
@@ -10,7 +10,13 @@ export function SessionList() {
   const [sessions, setSessions] = useState<UnifiedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
-  const [filters, setFilters] = useState({ tool: 'all' as ToolType | 'all', status: 'all' as 'open' | 'closed' | 'all', search: '' });
+  const [filters, setFilters] = useState<FilterState>({
+    tool: 'all',
+    status: 'all',
+    search: '',
+    sortBy: 'updatedAt',
+    sortOrder: 'desc',
+  });
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -19,6 +25,8 @@ export function SessionList() {
       if (filters.tool !== 'all') params.set('tool', filters.tool);
       if (filters.status !== 'all') params.set('status', filters.status);
       if (filters.search) params.set('search', filters.search);
+      if (filters.sortBy) params.set('sortBy', filters.sortBy);
+      if (filters.sortOrder) params.set('sortOrder', filters.sortOrder);
 
       const res = await fetch(`/api/sessions?${params}`);
       const data = await res.json();
@@ -34,6 +42,12 @@ export function SessionList() {
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
+
+  const handleStatusChange = (sessionId: string, newStatus: string) => {
+    setSessions(prev => prev.map(s =>
+      s.id === sessionId ? { ...s, status: newStatus as UnifiedSession['status'] } : s
+    ));
+  };
 
   return (
     <div>
@@ -72,7 +86,7 @@ export function SessionList() {
       ) : (
         <div className="space-y-2">
           {sessions.map(session => (
-            <SessionCard key={session.id} session={session} />
+            <SessionCard key={session.id} session={session} onStatusChange={handleStatusChange} />
           ))}
         </div>
       )}

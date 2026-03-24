@@ -22,7 +22,7 @@ export async function GET(
     } | undefined;
 
     if (state) {
-      detail.status = state.status as 'open' | 'closed';
+      detail.status = state.status as 'open' | 'closed' | 'dropped';
       if (state.summary) detail.summary = state.summary;
       if (state.custom_title) detail.title = state.custom_title;
     }
