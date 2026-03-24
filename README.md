@@ -6,8 +6,6 @@ A unified dashboard to browse, manage, and inspect your AI coding sessions — a
 
 If you vibe-code with multiple AI tools, your session histories are scattered across hidden directories in different formats. Open Session reads them all, normalizes the data, and gives you a single place to search, filter, review, and actually understand what your AI agents did.
 
-![Session List](docs/screenshot-list.png)
-
 ## Features
 
 ### Multi-Tool Session Aggregation
@@ -30,10 +28,6 @@ For Claude Code sessions, every step of the agent's work is fully visible:
 - **Tool Results** — Collapsible output with success/error indicators and size display.
 - **Parallel Call Detection** — Automatically labeled when the agent runs multiple tools simultaneously.
 - **Raw JSON Inspector** — Click `{ }` on any block to see the original JSONL entry.
-
-![Session Detail](docs/screenshot-detail.png)
-![Tool Calls](docs/screenshot-tools.png)
-![Raw JSON](docs/screenshot-rawjson.png)
 
 ### Session Management
 

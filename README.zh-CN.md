@@ -6,8 +6,6 @@
 
 如果你用多个 AI 工具进行 vibe coding，会话历史会以不同格式散落在各个隐藏目录中。Open Session 读取所有这些数据，统一格式，让你在一个地方搜索、筛选、回顾，真正弄清楚 AI Agent 到底做了什么。
 
-![Session List](docs/screenshot-list.png)
-
 ## 功能
 
 ### 多工具会话聚合
@@ -30,10 +28,6 @@
 - **工具结果** — 可折叠的输出，带成功/错误指示和大小显示。
 - **并行调用检测** — 自动检测并标记 Agent 同时运行多个工具的情况。
 - **Raw JSON 检查器** — 点击任意块上的 `{ }` 查看原始 JSONL 条目。
-
-![Session Detail](docs/screenshot-detail.png)
-![Tool Calls](docs/screenshot-tools.png)
-![Raw JSON](docs/screenshot-rawjson.png)
 
 ### 会话管理
 
