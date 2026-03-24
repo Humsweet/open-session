@@ -4,7 +4,11 @@
 
 统一的仪表板，用于浏览、管理和检查你在 Claude Code、Codex CLI、Copilot CLI 和 Gemini CLI 中的 AI 编码会话记录。
 
-如果你用多个 AI 工具进行 vibe coding，会话历史会以不同格式散落在各个隐藏目录中。Open Session 读取所有这些数据，统一格式，让你在一个地方搜索、筛选、回顾，真正弄清楚 AI Agent 到底做了什么。
+疯狂 vibe coding 的时候，session 越积越多——有些做完了，有些做到一半，有些你早就不打算继续了，但就这么堆在那里，完全不知道哪些还需要处理。
+
+Open Session 借鉴了 GitHub Issue 的 Open/Close 思路，并加入了第三个状态：**Dropped**——专门标记那些你已经决定放弃的 session。这样你随时都能清楚地知道：哪些 session 还需要继续处理，哪些已经完成，哪些可以不用再关心。对于需要继续的 session，一键复制 session ID 或完整的恢复命令，立刻回到上次中断的地方。
+
+除了状态管理，Open Session 还会读取你所有工具的 session 文件，统一格式，让你在一个地方搜索、筛选，真正弄清楚 AI Agent 到底做了什么。
 
 ## 功能
 

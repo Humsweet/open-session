@@ -4,7 +4,11 @@
 
 A unified dashboard to browse, manage, and inspect your AI coding sessions — across Claude Code, Codex CLI, Copilot CLI, and Gemini CLI.
 
-If you vibe-code with multiple AI tools, your session histories are scattered across hidden directories in different formats. Open Session reads them all, normalizes the data, and gives you a single place to search, filter, review, and actually understand what your AI agents did.
+When you're deep in a vibe-coding spree, sessions pile up — some finished, some abandoned halfway, some still waiting for you to come back. There's no good way to tell them apart.
+
+Open Session borrows the Open/Close idea from GitHub Issues and adds a third state: **Dropped** — for sessions you've decided to abandon. Now you always know exactly which sessions still need your attention, which are done, and which you've written off. For any session you want to resume, copy the session ID or the full resume command with one click and pick up right where you left off.
+
+Beyond status tracking, Open Session reads your session files across all supported tools, normalizes the data, and gives you a single place to search, filter, and actually understand what your AI agents did.
 
 ## Features
 
