@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { SessionDetail as SessionDetailType, SessionMessage } from '@/lib/parsers/types';
 import { OriginBadge, ToolBadge, StatusBadge } from './tool-icon';
@@ -10,6 +10,17 @@ import {
   ArrowLeft, MessageSquare, Folder, Clock, Sparkles,
   CheckCircle2, Circle, Copy, ChevronDown, ChevronRight, User, Bot, Pencil, Check, X
 } from 'lucide-react';
+import {
+  groupMessages,
+  StatsBar,
+  UserTextBlock,
+  AssistantTextBlock,
+  ThinkingBlock,
+  ToolCallBlock,
+  ToolResultBlock,
+  RawJsonModal,
+  LegacyMessageBubble,
+} from './message-blocks';
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -35,64 +46,6 @@ function getResumeCommand(session: SessionDetailType): string {
     default:
       return '';
   }
-}
-
-function MessageBubble({ message, index }: { message: SessionMessage; index: number }) {
-  const [expanded, setExpanded] = useState(index < 6);
-  const isUser = message.role === 'user';
-  const isTool = message.role === 'tool';
-  const isLong = message.content.length > 300;
-
-  return (
-    <div className="flex gap-2.5 py-2">
-      <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-        style={{ backgroundColor: isUser ? 'var(--accent-subtle)' : isTool ? 'var(--warning-subtle)' : 'var(--bg-tertiary)' }}>
-        {isUser ? <User size={11} style={{ color: 'var(--accent)' }} /> :
-         isTool ? <Sparkles size={11} style={{ color: 'var(--warning)' }} /> :
-         <Bot size={11} style={{ color: 'var(--text-secondary)' }} />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[11px] font-medium" style={{ color: isUser ? 'var(--accent)' : 'var(--text-secondary)' }}>
-            {isUser ? 'You' : isTool ? 'Tool' : 'Assistant'}
-          </span>
-          {message.timestamp && (
-            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-              {new Date(message.timestamp).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
-        <div
-          className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words"
-          style={{ color: 'var(--text-primary)' }}
-        >
-          {isLong && !expanded ? (
-            <>
-              {message.content.slice(0, 300)}...
-              <button
-                onClick={() => setExpanded(true)}
-                className="ml-1 text-[11px] font-medium"
-                style={{ color: 'var(--accent)' }}
-              >
-                Show more
-              </button>
-            </>
-          ) : (
-            message.content
-          )}
-          {isLong && expanded && (
-            <button
-              onClick={() => setExpanded(false)}
-              className="ml-1 text-[11px] font-medium"
-              style={{ color: 'var(--accent)' }}
-            >
-              Show less
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export function SessionDetailView({ id }: { id: string }) {
@@ -124,15 +77,54 @@ export function SessionDetailView({ id }: { id: string }) {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const toggleStatus = async () => {
+  const messages = session?.messages || [];
+  const hasRichBlocks = messages.some(m => m.blockType !== undefined);
+
+  const groups = useMemo(() => {
+    if (!hasRichBlocks) return [];
+    return groupMessages(messages);
+  }, [messages, hasRichBlocks]);
+
+  const groupOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let offset = 0;
+    for (const group of groups) {
+      offsets.push(offset);
+      offset += group.messages.length;
+    }
+    return offsets;
+  }, [groups]);
+
+  const toggleExpanded = (idx: number) => {
+    setExpandedIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    const indices = new Set<number>();
+    messages.forEach((m, i) => {
+      if (m.blockType === 'tool_call' || m.blockType === 'tool_result' || m.blockType === 'thinking') {
+        indices.add(i);
+      }
+    });
+    setExpandedIndices(indices);
+  };
+
+  const collapseAll = () => setExpandedIndices(new Set());
+
+  const setStatus = async (newStatus: string) => {
     if (!session) return;
-    const newStatus = session.status === 'open' ? 'closed' : 'open';
     await fetch(`/api/sessions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     });
-    setSession({ ...session, status: newStatus });
+    setSession({ ...session, status: newStatus as SessionDetailType['status'] });
+    setShowStatusMenu(false);
   };
 
   const summarize = async () => {
@@ -285,7 +277,7 @@ export function SessionDetailView({ id }: { id: string }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin" style={{ color: 'var(--text-tertiary)' }}>⟳</div>
+        <div className="animate-spin" style={{ color: 'var(--text-tertiary)' }}>&#x27F3;</div>
       </div>
     );
   }
@@ -402,18 +394,52 @@ export function SessionDetailView({ id }: { id: string }) {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={toggleStatus}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors"
-            style={{
-              backgroundColor: session.status === 'open' ? 'var(--success-subtle)' : 'var(--bg-tertiary)',
-              borderColor: session.status === 'open' ? 'var(--success)' : 'var(--border)',
-              color: session.status === 'open' ? 'var(--success)' : 'var(--text-secondary)',
-            }}
-          >
-            {session.status === 'open' ? <CheckCircle2 size={13} /> : <Circle size={13} />}
-            {session.status === 'open' ? 'Close' : 'Reopen'}
-          </button>
+          {/* Status Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowStatusMenu(!showStatusMenu)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors"
+              style={{
+                backgroundColor: session.status === 'open' ? 'var(--success-subtle)' : session.status === 'dropped' ? 'var(--danger-subtle)' : 'var(--bg-tertiary)',
+                borderColor: session.status === 'open' ? 'var(--success)' : session.status === 'dropped' ? 'var(--danger)' : 'var(--border)',
+                color: session.status === 'open' ? 'var(--success)' : session.status === 'dropped' ? 'var(--danger)' : 'var(--text-secondary)',
+              }}
+            >
+              {session.status === 'open' ? <CircleDot size={13} /> : session.status === 'dropped' ? <Trash2 size={13} /> : <CircleOff size={13} />}
+              {session.status === 'open' ? 'Open' : session.status === 'dropped' ? 'Dropped' : 'Closed'}
+              <ChevronDown size={11} />
+            </button>
+            {showStatusMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowStatusMenu(false)} />
+                <div
+                  className="absolute top-full right-0 mt-1 py-1 rounded-lg border z-20 min-w-[150px]"
+                  style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}
+                >
+                  {[
+                    { value: 'open', label: 'Open', icon: CircleDot, color: 'var(--success)' },
+                    { value: 'closed', label: 'Closed', icon: CircleOff, color: 'var(--text-tertiary)' },
+                    { value: 'dropped', label: 'Dropped', icon: Trash2, color: 'var(--danger)' },
+                  ].filter(a => a.value !== session.status).map(a => {
+                    const Icon = a.icon;
+                    return (
+                      <button
+                        key={a.value}
+                        onClick={() => setStatus(a.value)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors"
+                        style={{ color: 'var(--text-secondary)' }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = a.color; }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                      >
+                        <Icon size={13} />
+                        {a.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
 
           <button
             onClick={copyResume}
@@ -488,7 +514,7 @@ export function SessionDetailView({ id }: { id: string }) {
               opacity: summarizing ? 0.6 : 1,
             }}
           >
-            {summarizing ? '⟳ Generating...' : '✨ Generate Summary'}
+            {summarizing ? '\u27F3 Generating...' : '\u2728 Generate Summary'}
           </button>
         </div>
         {summarizing && (
@@ -551,34 +577,126 @@ export function SessionDetailView({ id }: { id: string }) {
         )}
       </div>
 
-      {/* Message Timeline */}
+      {/* Conversation Timeline */}
       <div className="rounded-lg border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
-        <button
-          onClick={() => setShowMessages(!showMessages)}
-          className="flex items-center justify-between w-full p-3.5 text-[13px] font-medium"
-          style={{ color: 'var(--text-primary)' }}
-        >
-          <span className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between p-3.5">
+          <button
+            onClick={() => setShowMessages(!showMessages)}
+            className="flex items-center gap-1.5 text-[13px] font-medium"
+            style={{ color: 'var(--text-primary)' }}
+          >
             <MessageSquare size={14} />
-            Messages ({session.messages.length})
-          </span>
-          {showMessages ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
+            Conversation ({messages.length} blocks)
+            {showMessages ? <ChevronDown size={14} className="ml-1" /> : <ChevronRight size={14} className="ml-1" />}
+          </button>
+          {hasRichBlocks && showMessages && (
+            <div className="flex gap-2">
+              <button onClick={expandAll}
+                className="px-2.5 py-1 rounded text-[11px] border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>
+                Expand All
+              </button>
+              <button onClick={collapseAll}
+                className="px-2.5 py-1 rounded text-[11px] border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>
+                Collapse All
+              </button>
+            </div>
+          )}
+        </div>
 
         {showMessages && (
-          <div className="px-3.5 pb-3.5 divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-            {session.messages.length === 0 ? (
+          <div className="px-3.5 pb-3.5">
+            {messages.length === 0 ? (
               <p className="py-4 text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
                 No messages to display
               </p>
+            ) : hasRichBlocks ? (
+              /* Rich rendering for Claude sessions */
+              <div className="flex flex-col gap-0.5">
+                {groups.map((group, gi) => {
+                  const baseIdx = groupOffsets[gi];
+
+                  if (group.type === 'single') {
+                    const msg = group.messages[0];
+                    const idx = baseIdx;
+
+                    if (msg.blockType === 'thinking') {
+                      return (
+                        <ThinkingBlock key={idx} message={msg}
+                          expanded={expandedIndices.has(idx)}
+                          onToggle={() => toggleExpanded(idx)}
+                          onRawJson={setRawJsonContent}
+                        />
+                      );
+                    }
+                    if (msg.role === 'user') {
+                      return <UserTextBlock key={idx} message={msg} />;
+                    }
+                    return <AssistantTextBlock key={idx} message={msg} onRawJson={setRawJsonContent} />;
+                  }
+
+                  /* Tool group */
+                  return (
+                    <div key={`tg-${gi}`} className="rounded-lg overflow-hidden border"
+                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                      {group.isParallel && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 text-[10px]"
+                          style={{ color: 'var(--text-tertiary)', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M16 3h5v5" /><path d="M8 3H3v5" />
+                            <path d="M12 22v-8.3a4 4 0 00-1.172-2.828L3 3" />
+                            <path d="M21 3l-7.828 7.828A4 4 0 0012 13.657V22" />
+                          </svg>
+                          {group.parallelCount} parallel calls
+                        </div>
+                      )}
+                      {group.messages.map((msg, mi) => {
+                        const idx = baseIdx + mi;
+                        const showSeparator = mi > 0;
+                        return (
+                          <div key={idx}
+                            style={{ borderTop: showSeparator ? '1px solid var(--border-subtle)' : 'none' }}>
+                            {msg.blockType === 'tool_call' ? (
+                              <ToolCallBlock message={msg}
+                                expanded={expandedIndices.has(idx)}
+                                onToggle={() => toggleExpanded(idx)}
+                                onRawJson={setRawJsonContent}
+                              />
+                            ) : (
+                              <ToolResultBlock message={msg}
+                                expanded={expandedIndices.has(idx)}
+                                onToggle={() => toggleExpanded(idx)}
+                                onRawJson={setRawJsonContent}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              session.messages.map((msg, i) => (
-                <MessageBubble key={i} message={msg} index={i} />
-              ))
+              /* Legacy rendering for non-Claude sessions */
+              <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                {messages.map((msg, i) => (
+                  <LegacyMessageBubble key={i} message={msg} />
+                ))}
+              </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Raw JSON Modal */}
+      {rawJsonContent && (
+        <RawJsonModal json={rawJsonContent} onClose={() => setRawJsonContent(null)} />
+      )}
     </div>
   );
 }

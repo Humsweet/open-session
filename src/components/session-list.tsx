@@ -39,6 +39,8 @@ export function SessionList() {
       if (filters.status !== 'all') params.set('status', filters.status);
       if (filters.origin !== 'all') params.set('origin', filters.origin);
       if (filters.search) params.set('search', filters.search);
+      if (filters.sortBy) params.set('sortBy', filters.sortBy);
+      if (filters.sortOrder) params.set('sortOrder', filters.sortOrder);
 
       const res = await fetch(`/api/sessions?${params}`);
       const data = await res.json();

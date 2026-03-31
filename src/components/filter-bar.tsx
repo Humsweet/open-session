@@ -12,10 +12,11 @@ const tools: { value: ToolType | 'all'; label: string }[] = [
   { value: 'gemini-cli', label: 'Gemini' },
 ];
 
-const statuses = [
+const statuses: { value: SessionStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'open', label: 'Open' },
   { value: 'closed', label: 'Closed' },
+  { value: 'dropped', label: 'Dropped' },
 ];
 
 const origins: { value: SessionOrigin | 'all'; label: string }[] = [
@@ -71,6 +72,8 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
   const [activeStatus, setActiveStatus] = useState<'open' | 'closed' | 'all'>('open');
   const [activeOrigin, setActiveOrigin] = useState<SessionOrigin | 'all'>('local');
   const [search, setSearch] = useState('');
+  const [activeSort, setActiveSort] = useState('updatedAt-desc');
+  const [showSortMenu, setShowSortMenu] = useState(false);
 
   const update = (
     tool?: ToolType | 'all',
@@ -82,12 +85,15 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
     const s = status ?? activeStatus;
     const o = origin ?? activeOrigin;
     const sq = q ?? search;
+    const so = sort ?? activeSort;
     if (tool !== undefined) setActiveTool(t);
     if (status !== undefined) setActiveStatus(s);
     if (origin !== undefined) setActiveOrigin(o);
     if (q !== undefined) setSearch(sq);
     onFilterChange({ tool: t, status: s, origin: o, search: sq });
   };
+
+  const currentSortLabel = sortOptions.find(o => o.value === activeSort)?.label || 'Last updated';
 
   return (
     <div className="flex items-center gap-4 mb-4">
@@ -114,7 +120,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
         {statuses.map(s => (
           <button
             key={s.value}
-            onClick={() => update(undefined, s.value as 'open' | 'closed' | 'all')}
+            onClick={() => update(undefined, s.value)}
             className="px-2 py-1 rounded text-[12px] font-medium transition-colors"
             style={{
               backgroundColor: activeStatus === s.value ? 'var(--accent-subtle)' : 'transparent',

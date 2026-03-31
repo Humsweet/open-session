@@ -26,6 +26,13 @@ export interface SessionMessage {
   content: string;
   timestamp?: string;
   toolName?: string;
+  // Rich block fields (populated by Claude parser)
+  blockType?: 'text' | 'thinking' | 'tool_call' | 'tool_result';
+  toolInput?: Record<string, unknown>;
+  toolCallId?: string;
+  isError?: boolean;
+  isRedacted?: boolean;
+  rawJson?: string;
 }
 
 export interface SessionDetail extends UnifiedSession {

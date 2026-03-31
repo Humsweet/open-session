@@ -12,6 +12,8 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status') as 'open' | 'closed' | null;
     const originFilter = searchParams.get('origin') as SessionOrigin | null;
     const search = searchParams.get('search')?.toLowerCase();
+    const sortBy = searchParams.get('sortBy') || 'updatedAt';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
 
     let sessions = await scanAllSessions(toolFilter || undefined);
     const summaryHelperIds = sessions.filter(isSummaryHelperSession).map(session => session.id);
@@ -57,6 +59,14 @@ export async function GET(request: NextRequest) {
         s.cwd.toLowerCase().includes(search)
       );
     }
+
+    // Apply sorting
+    const field = sortBy as 'updatedAt' | 'createdAt';
+    sessions.sort((a, b) => {
+      const ta = new Date(a[field] || a.updatedAt).getTime();
+      const tb = new Date(b[field] || b.updatedAt).getTime();
+      return sortOrder === 'asc' ? ta - tb : tb - ta;
+    });
 
     return NextResponse.json({ sessions, total: sessions.length });
   } catch (error) {

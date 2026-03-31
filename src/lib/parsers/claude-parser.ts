@@ -39,31 +39,91 @@ function extractLastUserMessage(lines: string[]): { content: string; timestamp?:
 
 function parseMessages(lines: string[]): SessionMessage[] {
   const messages: SessionMessage[] = [];
+
   for (const line of lines) {
     try {
       const obj = JSON.parse(line);
       if (!obj.message?.role) continue;
-      const role = obj.message.role as SessionMessage['role'];
-      if (role !== 'user' && role !== 'assistant') continue;
 
-      let content = '';
-      if (typeof obj.message.content === 'string') {
-        content = obj.message.content;
-      } else if (Array.isArray(obj.message.content)) {
-        content = obj.message.content
-          .filter((b: { type: string }) => b.type === 'text')
-          .map((b: { text: string }) => b.text)
-          .join('\n');
-        if (!content) {
-          const toolUse = obj.message.content.find((b: { type: string }) => b.type === 'tool_use');
-          if (toolUse) {
-            content = `[Tool: ${toolUse.name}]`;
+      const role = obj.message.role as string;
+      if (role !== 'user' && role !== 'assistant') continue;
+      if (obj.isMeta) continue;
+
+      const content = obj.message.content;
+      const timestamp = obj.timestamp;
+      const rawEntry = JSON.stringify(obj);
+      const rawJson = rawEntry.length > 16384 ? rawEntry.slice(0, 16384) + '...(truncated)' : rawEntry;
+
+      if (typeof content === 'string') {
+        if (content.includes('<command-name>') || content.includes('<local-command')) continue;
+        messages.push({
+          role: role as SessionMessage['role'],
+          blockType: 'text',
+          content,
+          timestamp,
+          rawJson,
+        });
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          switch (block.type) {
+            case 'text':
+              if (block.text) {
+                messages.push({
+                  role: role as SessionMessage['role'],
+                  blockType: 'text',
+                  content: block.text,
+                  timestamp,
+                  rawJson,
+                });
+              }
+              break;
+
+            case 'thinking':
+              messages.push({
+                role: 'assistant',
+                blockType: 'thinking',
+                content: block.thinking || '',
+                isRedacted: !block.thinking,
+                timestamp,
+                rawJson,
+              });
+              break;
+
+            case 'tool_use':
+              messages.push({
+                role: 'assistant',
+                blockType: 'tool_call',
+                content: '',
+                toolName: block.name,
+                toolInput: block.input,
+                toolCallId: block.id,
+                timestamp,
+                rawJson,
+              });
+              break;
+
+            case 'tool_result': {
+              let resultContent = '';
+              if (typeof block.content === 'string') {
+                resultContent = block.content;
+              } else if (Array.isArray(block.content)) {
+                resultContent = block.content
+                  .map((c: { text?: string }) => c.text || '')
+                  .join('\n');
+              }
+              messages.push({
+                role: 'user',
+                blockType: 'tool_result',
+                content: resultContent,
+                isError: block.is_error || false,
+                toolCallId: block.tool_use_id,
+                timestamp,
+                rawJson,
+              });
+              break;
+            }
           }
         }
-      }
-
-      if (content) {
-        messages.push({ role, content, timestamp: obj.timestamp });
       }
     } catch { /* skip */ }
   }
