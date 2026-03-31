@@ -59,10 +59,11 @@ export async function POST(request: NextRequest) {
 
       const summaryMap = new Map(stateRows.map(row => [row.session_id, row.summary]));
       const updateTitle = db.prepare(`
-        INSERT INTO session_state (session_id, status, custom_title, updated_at)
-        VALUES (?, COALESCE((SELECT status FROM session_state WHERE session_id = ?), 'open'), ?, datetime('now'))
+        INSERT INTO session_state (session_id, status, custom_title, summary_title_applied, updated_at)
+        VALUES (?, COALESCE((SELECT status FROM session_state WHERE session_id = ?), 'open'), ?, 1, datetime('now'))
         ON CONFLICT(session_id) DO UPDATE SET
           custom_title = excluded.custom_title,
+          summary_title_applied = 1,
           updated_at = datetime('now')
       `);
 

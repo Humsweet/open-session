@@ -1,26 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { SessionDetail as SessionDetailType, SessionMessage } from '@/lib/parsers/types';
+import { SessionDetail as SessionDetailType } from '@/lib/parsers/types';
 import { OriginBadge, ToolBadge, StatusBadge } from './tool-icon';
 import { SimpleMarkdown } from './simple-markdown';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
 import {
   ArrowLeft, MessageSquare, Folder, Clock, Sparkles,
-  CheckCircle2, Circle, Copy, ChevronDown, ChevronRight, User, Bot, Pencil, Check, X
+  Copy, ChevronDown, ChevronRight, Pencil, Check, X, CircleDot, CircleOff, Trash2
 } from 'lucide-react';
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return date.toLocaleDateString();
-}
+import {
+  groupMessages,
+  StatsBar,
+  UserTextBlock,
+  AssistantTextBlock,
+  ThinkingBlock,
+  ToolCallBlock,
+  ToolResultBlock,
+  RawJsonModal,
+  LegacyMessageBubble,
+} from './message-blocks';
 
 function getResumeCommand(session: SessionDetailType): string {
   switch (session.tool) {
@@ -37,62 +37,15 @@ function getResumeCommand(session: SessionDetailType): string {
   }
 }
 
-function MessageBubble({ message, index }: { message: SessionMessage; index: number }) {
-  const [expanded, setExpanded] = useState(index < 6);
-  const isUser = message.role === 'user';
-  const isTool = message.role === 'tool';
-  const isLong = message.content.length > 300;
-
-  return (
-    <div className="flex gap-2.5 py-2">
-      <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-        style={{ backgroundColor: isUser ? 'var(--accent-subtle)' : isTool ? 'var(--warning-subtle)' : 'var(--bg-tertiary)' }}>
-        {isUser ? <User size={11} style={{ color: 'var(--accent)' }} /> :
-         isTool ? <Sparkles size={11} style={{ color: 'var(--warning)' }} /> :
-         <Bot size={11} style={{ color: 'var(--text-secondary)' }} />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[11px] font-medium" style={{ color: isUser ? 'var(--accent)' : 'var(--text-secondary)' }}>
-            {isUser ? 'You' : isTool ? 'Tool' : 'Assistant'}
-          </span>
-          {message.timestamp && (
-            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-              {new Date(message.timestamp).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
-        <div
-          className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words"
-          style={{ color: 'var(--text-primary)' }}
-        >
-          {isLong && !expanded ? (
-            <>
-              {message.content.slice(0, 300)}...
-              <button
-                onClick={() => setExpanded(true)}
-                className="ml-1 text-[11px] font-medium"
-                style={{ color: 'var(--accent)' }}
-              >
-                Show more
-              </button>
-            </>
-          ) : (
-            message.content
-          )}
-          {isLong && expanded && (
-            <button
-              onClick={() => setExpanded(false)}
-              className="ml-1 text-[11px] font-medium"
-              style={{ color: 'var(--accent)' }}
-            >
-              Show less
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  return date.toLocaleDateString();
 }
 
 export function SessionDetailView({ id }: { id: string }) {
@@ -109,6 +62,9 @@ export function SessionDetailView({ id }: { id: string }) {
   const [renameValue, setRenameValue] = useState('');
   const [savingRename, setSavingRename] = useState(false);
   const [renameError, setRenameError] = useState('');
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [expandedIndices, setExpandedIndices] = useState<Set<number>>(new Set());
+  const [rawJsonContent, setRawJsonContent] = useState<string | null>(null);
 
   const summaryTitle = extractSummaryTitle(session?.summary);
   const summaryBody = stripSummaryTitle(session?.summary);
@@ -124,15 +80,63 @@ export function SessionDetailView({ id }: { id: string }) {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const toggleStatus = async () => {
+  const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
+  const hasRichBlocks = messages.some(message => message.blockType !== undefined);
+
+  const groups = useMemo(() => {
+    if (!hasRichBlocks) return [];
+    return groupMessages(messages);
+  }, [hasRichBlocks, messages]);
+
+  const groupOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let offset = 0;
+    for (const group of groups) {
+      offsets.push(offset);
+      offset += group.messages.length;
+    }
+    return offsets;
+  }, [groups]);
+
+  const toggleExpanded = (index: number) => {
+    setExpandedIndices(current => {
+      const next = new Set(current);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    const indices = new Set<number>();
+    messages.forEach((message, index) => {
+      if (
+        message.blockType === 'thinking' ||
+        message.blockType === 'tool_call' ||
+        message.blockType === 'tool_result'
+      ) {
+        indices.add(index);
+      }
+    });
+    setExpandedIndices(indices);
+  };
+
+  const collapseAll = () => {
+    setExpandedIndices(new Set());
+  };
+
+  const setStatus = async (nextStatus: 'open' | 'closed' | 'dropped') => {
     if (!session) return;
-    const newStatus = session.status === 'open' ? 'closed' : 'open';
     await fetch(`/api/sessions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
+      body: JSON.stringify({ status: nextStatus }),
     });
-    setSession({ ...session, status: newStatus });
+    setSession({ ...session, status: nextStatus });
+    setShowStatusMenu(false);
   };
 
   const summarize = async () => {
@@ -187,7 +191,7 @@ export function SessionDetailView({ id }: { id: string }) {
             throw new Error('No summary returned');
           }
           setSummaryStatus('Complete');
-          setSession(current => (current ? { ...current, summary: payload.summary as string } : current));
+          setSession(current => (current ? { ...current, summary: payload.summary as string, summaryTitleApplied: false } : current));
           return;
         }
 
@@ -242,7 +246,7 @@ export function SessionDetailView({ id }: { id: string }) {
     setIsRenaming(false);
   };
 
-  const saveRename = async (overrideTitle?: string) => {
+  const saveRename = async (overrideTitle?: string, applySummaryTitle = false) => {
     if (!session) return;
     const nextTitle = (overrideTitle ?? renameValue).trim();
 
@@ -251,7 +255,7 @@ export function SessionDetailView({ id }: { id: string }) {
       return;
     }
 
-    if (nextTitle === session.title) {
+    if (nextTitle === session.title && !applySummaryTitle) {
       setRenameError('');
       setIsRenaming(false);
       return;
@@ -264,14 +268,14 @@ export function SessionDetailView({ id }: { id: string }) {
       const res = await fetch(`/api/sessions/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customTitle: nextTitle }),
+        body: JSON.stringify({ customTitle: nextTitle, applySummaryTitle }),
       });
 
       if (!res.ok) {
         throw new Error('Rename failed');
       }
 
-      setSession({ ...session, title: nextTitle });
+      setSession({ ...session, title: nextTitle, summaryTitleApplied: applySummaryTitle });
       setRenameValue(nextTitle);
       setIsRenaming(false);
     } catch (e) {
@@ -400,18 +404,72 @@ export function SessionDetailView({ id }: { id: string }) {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={toggleStatus}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors"
-            style={{
-              backgroundColor: session.status === 'open' ? 'var(--success-subtle)' : 'var(--bg-tertiary)',
-              borderColor: session.status === 'open' ? 'var(--success)' : 'var(--border)',
-              color: session.status === 'open' ? 'var(--success)' : 'var(--text-secondary)',
-            }}
-          >
-            {session.status === 'open' ? <CheckCircle2 size={13} /> : <Circle size={13} />}
-            {session.status === 'open' ? 'Close' : 'Reopen'}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowStatusMenu(current => !current)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors"
+              style={{
+                backgroundColor:
+                  session.status === 'open'
+                    ? 'var(--success-subtle)'
+                    : session.status === 'dropped'
+                      ? 'var(--danger-subtle)'
+                      : 'var(--bg-tertiary)',
+                borderColor:
+                  session.status === 'open'
+                    ? 'var(--success)'
+                    : session.status === 'dropped'
+                      ? 'var(--danger)'
+                      : 'var(--border)',
+                color:
+                  session.status === 'open'
+                    ? 'var(--success)'
+                    : session.status === 'dropped'
+                      ? 'var(--danger)'
+                      : 'var(--text-secondary)',
+              }}
+            >
+              {session.status === 'open' ? <CircleDot size={13} /> : session.status === 'dropped' ? <Trash2 size={13} /> : <CircleOff size={13} />}
+              {session.status === 'open' ? 'Open' : session.status === 'dropped' ? 'Dropped' : 'Closed'}
+              <ChevronDown size={11} />
+            </button>
+            {showStatusMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowStatusMenu(false)} />
+                <div
+                  className="absolute top-full right-0 mt-1 py-1 rounded-lg border z-20 min-w-[150px]"
+                  style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}
+                >
+                  {[
+                    { value: 'open', label: 'Open', icon: CircleDot, color: 'var(--success)' },
+                    { value: 'closed', label: 'Closed', icon: CircleOff, color: 'var(--text-secondary)' },
+                    { value: 'dropped', label: 'Dropped', icon: Trash2, color: 'var(--danger)' },
+                  ].filter(action => action.value !== session.status).map(action => {
+                    const Icon = action.icon;
+                    return (
+                      <button
+                        key={action.value}
+                        onClick={() => setStatus(action.value as 'open' | 'closed' | 'dropped')}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors"
+                        style={{ color: 'var(--text-secondary)' }}
+                        onMouseEnter={event => {
+                          event.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+                          event.currentTarget.style.color = action.color;
+                        }}
+                        onMouseLeave={event => {
+                          event.currentTarget.style.backgroundColor = 'transparent';
+                          event.currentTarget.style.color = 'var(--text-secondary)';
+                        }}
+                      >
+                        <Icon size={13} />
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
 
           <button
             onClick={copyResume}
@@ -469,6 +527,8 @@ export function SessionDetailView({ id }: { id: string }) {
         </div>
       )}
 
+      {hasRichBlocks && <StatsBar messages={messages} />}
+
       <div className="mb-5 rounded-lg border p-4" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-[13px] font-medium flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
@@ -516,18 +576,18 @@ export function SessionDetailView({ id }: { id: string }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => saveRename(summaryTitle)}
-                  disabled={savingRename || !summaryTitle || summaryTitle === session.title}
+                  onClick={() => saveRename(summaryTitle, true)}
+                  disabled={savingRename || !summaryTitle || session.summaryTitleApplied}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium border transition-colors flex-shrink-0"
                   style={{
-                    backgroundColor: summaryTitle === session.title ? 'var(--bg-secondary)' : 'var(--accent-subtle)',
-                    borderColor: summaryTitle === session.title ? 'var(--border)' : 'var(--accent)',
-                    color: summaryTitle === session.title ? 'var(--text-tertiary)' : 'var(--accent)',
+                    backgroundColor: session.summaryTitleApplied ? 'var(--bg-secondary)' : 'var(--accent-subtle)',
+                    borderColor: session.summaryTitleApplied ? 'var(--border)' : 'var(--accent)',
+                    color: session.summaryTitleApplied ? 'var(--text-tertiary)' : 'var(--accent)',
                     opacity: savingRename ? 0.6 : 1,
                   }}
                 >
                   <Check size={12} />
-                  {summaryTitle === session.title ? 'Applied' : 'Apply Name'}
+                  {session.summaryTitleApplied ? 'Applied' : 'Apply Name'}
                 </button>
               </div>
             )}
@@ -549,32 +609,160 @@ export function SessionDetailView({ id }: { id: string }) {
       </div>
 
       <div className="rounded-lg border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
-        <button
-          onClick={() => setShowMessages(!showMessages)}
-          className="flex items-center justify-between w-full p-3.5 text-[13px] font-medium"
-          style={{ color: 'var(--text-primary)' }}
-        >
-          <span className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between p-3.5">
+          <button
+            onClick={() => setShowMessages(!showMessages)}
+            className="flex items-center gap-1.5 text-[13px] font-medium"
+            style={{ color: 'var(--text-primary)' }}
+          >
             <MessageSquare size={14} />
-            Messages ({session.messages.length})
-          </span>
-          {showMessages ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
+            Conversation ({messages.length} blocks)
+            {showMessages ? <ChevronDown size={14} className="ml-1" /> : <ChevronRight size={14} className="ml-1" />}
+          </button>
+          {hasRichBlocks && showMessages && (
+            <div className="flex gap-2">
+              <button
+                onClick={expandAll}
+                className="px-2.5 py-1 rounded text-[11px] border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}
+                onMouseEnter={event => {
+                  event.currentTarget.style.borderColor = 'var(--text-tertiary)';
+                  event.currentTarget.style.color = 'var(--text-secondary)';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.borderColor = 'var(--border)';
+                  event.currentTarget.style.color = 'var(--text-tertiary)';
+                }}
+              >
+                Expand All
+              </button>
+              <button
+                onClick={collapseAll}
+                className="px-2.5 py-1 rounded text-[11px] border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}
+                onMouseEnter={event => {
+                  event.currentTarget.style.borderColor = 'var(--text-tertiary)';
+                  event.currentTarget.style.color = 'var(--text-secondary)';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.borderColor = 'var(--border)';
+                  event.currentTarget.style.color = 'var(--text-tertiary)';
+                }}
+              >
+                Collapse All
+              </button>
+            </div>
+          )}
+        </div>
 
         {showMessages && (
-          <div className="px-3.5 pb-3.5 divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-            {session.messages.length === 0 ? (
+          <div className="px-3.5 pb-3.5">
+            {messages.length === 0 ? (
               <p className="py-4 text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
                 No messages to display
               </p>
+            ) : hasRichBlocks ? (
+              <div className="flex flex-col gap-0.5">
+                {groups.map((group, groupIndex) => {
+                  const baseIndex = groupOffsets[groupIndex];
+
+                  if (group.type === 'single') {
+                    const message = group.messages[0];
+                    const index = baseIndex;
+
+                    if (message.blockType === 'thinking') {
+                      return (
+                        <ThinkingBlock
+                          key={index}
+                          message={message}
+                          expanded={expandedIndices.has(index)}
+                          onToggle={() => toggleExpanded(index)}
+                          onRawJson={setRawJsonContent}
+                        />
+                      );
+                    }
+
+                    if (message.role === 'user') {
+                      return <UserTextBlock key={index} message={message} />;
+                    }
+
+                    return (
+                      <AssistantTextBlock
+                        key={index}
+                        message={message}
+                        onRawJson={setRawJsonContent}
+                      />
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={`tool-group-${groupIndex}`}
+                      className="rounded-lg overflow-hidden border"
+                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}
+                    >
+                      {group.isParallel && (
+                        <div
+                          className="flex items-center gap-1.5 px-3 py-1 text-[10px]"
+                          style={{
+                            color: 'var(--text-tertiary)',
+                            background: 'var(--bg-tertiary)',
+                            borderBottom: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M16 3h5v5" />
+                            <path d="M8 3H3v5" />
+                            <path d="M12 22v-8.3a4 4 0 00-1.172-2.828L3 3" />
+                            <path d="M21 3l-7.828 7.828A4 4 0 0012 13.657V22" />
+                          </svg>
+                          {group.parallelCount} parallel calls
+                        </div>
+                      )}
+                      {group.messages.map((message, messageIndex) => {
+                        const index = baseIndex + messageIndex;
+                        const showSeparator = messageIndex > 0;
+                        return (
+                          <div
+                            key={index}
+                            style={{ borderTop: showSeparator ? '1px solid var(--border-subtle)' : 'none' }}
+                          >
+                            {message.blockType === 'tool_call' ? (
+                              <ToolCallBlock
+                                message={message}
+                                expanded={expandedIndices.has(index)}
+                                onToggle={() => toggleExpanded(index)}
+                                onRawJson={setRawJsonContent}
+                              />
+                            ) : (
+                              <ToolResultBlock
+                                message={message}
+                                expanded={expandedIndices.has(index)}
+                                onToggle={() => toggleExpanded(index)}
+                                onRawJson={setRawJsonContent}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              session.messages.map((msg, i) => (
-                <MessageBubble key={i} message={msg} index={i} />
-              ))
+              <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                {messages.map((message, index) => (
+                  <LegacyMessageBubble key={index} message={message} />
+                ))}
+              </div>
             )}
           </div>
         )}
       </div>
+
+      {rawJsonContent && (
+        <RawJsonModal json={rawJsonContent} onClose={() => setRawJsonContent(null)} />
+      )}
     </div>
   );
 }

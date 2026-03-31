@@ -15,16 +15,17 @@ export function persistSessionStatus(sessionId: string, status: SessionStatus) {
 export function persistSessionSummary(sessionId: string, summary: string) {
   const db = getDb();
   const existing = db
-    .prepare('SELECT status FROM session_state WHERE session_id = ?')
-    .get(sessionId) as { status: SessionStatus } | undefined;
+    .prepare('SELECT status, custom_title FROM session_state WHERE session_id = ?')
+    .get(sessionId) as { status: SessionStatus; custom_title: string | null } | undefined;
 
   db.prepare(`
-    INSERT INTO session_state (session_id, status, summary, updated_at)
-    VALUES (?, ?, ?, datetime('now'))
+    INSERT INTO session_state (session_id, status, summary, custom_title, summary_title_applied, updated_at)
+    VALUES (?, ?, ?, ?, 0, datetime('now'))
     ON CONFLICT(session_id) DO UPDATE SET
       summary = excluded.summary,
+      summary_title_applied = 0,
       updated_at = datetime('now')
-  `).run(sessionId, existing?.status || 'open', summary);
+  `).run(sessionId, existing?.status || 'open', summary, existing?.custom_title || null);
 }
 
 export function persistSessionsClosed(sessionIds: string[]) {

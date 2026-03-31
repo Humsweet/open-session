@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { scanAllSessions, ToolType } from '@/lib/parsers';
 import { getDb } from '@/lib/db/client';
-import { SessionOrigin } from '@/lib/parsers/types';
+import { SessionOrigin, SessionStatus } from '@/lib/parsers/types';
 import { persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const toolFilter = searchParams.get('tool') as ToolType | null;
-    const statusFilter = searchParams.get('status') as 'open' | 'closed' | null;
+    const statusFilter = searchParams.get('status') as SessionStatus | null;
     const originFilter = searchParams.get('origin') as SessionOrigin | null;
     const search = searchParams.get('search')?.toLowerCase();
     const sortBy = searchParams.get('sortBy') || 'updatedAt';
@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
       status: string;
       summary: string | null;
       custom_title: string | null;
+      summary_title_applied: number;
     }>;
     const stateMap = new Map(states.map(s => [s.session_id, s]));
 
@@ -37,9 +38,10 @@ export async function GET(request: NextRequest) {
       const forcedClosed = isSummaryHelperSession(s);
       return {
         ...s,
-        status: forcedClosed ? 'closed' : (state?.status as 'open' | 'closed') || s.status,
+        status: forcedClosed ? 'closed' : (state?.status as SessionStatus) || s.status,
         summary: state?.summary || s.summary,
         title: state?.custom_title || s.title,
+        summaryTitleApplied: Boolean(state?.summary_title_applied),
       };
     });
 

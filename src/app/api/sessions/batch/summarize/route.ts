@@ -5,6 +5,8 @@ import { persistSessionSummary } from '@/lib/session-state';
 import { generateSummaryWithFallback } from '@/lib/summarizer/service';
 import { getSpinnerVerbs, getSummaryEngineLabel, SummaryEngine, usesSyntheticSpinner } from '@/lib/summarizer/spinner-verbs';
 
+const MAX_BATCH_SUMMARY_CONCURRENCY = 3;
+
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const ids = Array.isArray(body.ids)
@@ -19,19 +21,34 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+      const spinnerTimers = new Map<string, ReturnType<typeof setInterval>>();
       let closed = false;
+      let cancelled = false;
+      let nextIndex = 0;
       const results: Array<{ id: string; success: boolean; error?: string }> = [];
 
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        if (closed || cancelled) return;
+
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
+        }
       };
 
-      const cleanup = () => {
-        if (spinnerTimer) {
-          clearInterval(spinnerTimer);
-          spinnerTimer = null;
+      const stopSpinner = (sessionId: string) => {
+        const timer = spinnerTimers.get(sessionId);
+        if (!timer) return;
+        clearInterval(timer);
+        spinnerTimers.delete(sessionId);
+      };
+
+      const stopAllSpinners = () => {
+        for (const timer of spinnerTimers.values()) {
+          clearInterval(timer);
         }
+        spinnerTimers.clear();
       };
 
       const close = () => {
@@ -41,7 +58,7 @@ export async function POST(request: NextRequest) {
       };
 
       const startSpinner = (sessionId: string, engine: SummaryEngine, fallback: boolean) => {
-        cleanup();
+        stopSpinner(sessionId);
 
         const engineLabel = getSummaryEngineLabel(engine);
 
@@ -68,7 +85,7 @@ export async function POST(request: NextRequest) {
           verb: verbs[verbIndex],
         });
 
-        spinnerTimer = setInterval(() => {
+        const timer = setInterval(() => {
           verbIndex = (verbIndex + 1) % verbs.length;
           send('status', {
             id: sessionId,
@@ -78,98 +95,141 @@ export async function POST(request: NextRequest) {
             verb: verbs[verbIndex],
           });
         }, 1200);
+
+        spinnerTimers.set(sessionId, timer);
+      };
+
+      request.signal.addEventListener('abort', () => {
+        cancelled = true;
+        stopAllSpinners();
+        close();
+      });
+
+      const runOne = async (id: string, index: number, primaryEngine: SummaryEngine) => {
+        try {
+          send('status', {
+            id,
+            index,
+            phase: 'loading-session',
+            message: 'Loading session context',
+          });
+
+          const detail = await getSessionDetail(id);
+          if (!detail) {
+            throw new Error('Session not found');
+          }
+
+          if (cancelled) return;
+
+          send('session-start', {
+            id,
+            title: detail.title,
+            index,
+            total: ids.length,
+          });
+
+          const result = await generateSummaryWithFallback(detail, primaryEngine, {
+            onEvent: event => {
+              if (cancelled) return;
+
+              if (event.type === 'fallback') {
+                stopSpinner(id);
+                send('status', {
+                  id,
+                  index,
+                  phase: 'fallback',
+                  from: event.from,
+                  to: event.to,
+                  engineLabel: getSummaryEngineLabel(event.to),
+                  message: `${getSummaryEngineLabel(event.from)} failed, falling back to ${getSummaryEngineLabel(event.to)}`,
+                });
+                return;
+              }
+
+              if (event.type === 'attempt-start') {
+                startSpinner(id, event.engine, event.fallback);
+                return;
+              }
+
+              if (event.type === 'attempt-failed') {
+                stopSpinner(id);
+              }
+            },
+            onStatus: status => {
+              if (cancelled) return;
+
+              send('status', {
+                id,
+                index,
+                phase: 'running',
+                engine: status.engine,
+                engineLabel: getSummaryEngineLabel(status.engine),
+                message: status.message,
+                source: status.source,
+              });
+            },
+          });
+
+          if (cancelled) return;
+
+          stopSpinner(id);
+          send('status', {
+            id,
+            index,
+            phase: 'persisting',
+            engine: result.engineUsed,
+            engineLabel: getSummaryEngineLabel(result.engineUsed),
+            message: 'Saving summary',
+          });
+
+          persistSessionSummary(id, result.summary);
+          results.push({ id, success: true });
+
+          send('session-complete', {
+            id,
+            index,
+            title: detail.title,
+            summary: result.summary,
+            engine: result.engineUsed,
+            engineLabel: getSummaryEngineLabel(result.engineUsed),
+            fallbackUsed: result.fallbackUsed,
+          });
+        } catch (error) {
+          stopSpinner(id);
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          results.push({ id, success: false, error: message });
+          send('session-error', { id, index, error: message });
+        }
+      };
+
+      const worker = async (primaryEngine: SummaryEngine) => {
+        while (!cancelled) {
+          const current = nextIndex;
+          nextIndex += 1;
+
+          if (current >= ids.length) {
+            return;
+          }
+
+          await runOne(ids[current], current + 1, primaryEngine);
+        }
       };
 
       try {
         const db = getDb();
         const setting = db.prepare("SELECT value FROM settings WHERE key = 'summary_cli'").get() as { value: string } | undefined;
         const primaryEngine = (setting?.value || 'claude-code') as SummaryEngine;
+        const concurrency = Math.min(MAX_BATCH_SUMMARY_CONCURRENCY, ids.length);
 
-        send('batch-start', { total: ids.length });
+        send('batch-start', {
+          total: ids.length,
+          concurrency,
+        });
 
-        for (let index = 0; index < ids.length; index += 1) {
-          const id = ids[index];
+        await Promise.all(Array.from({ length: concurrency }, () => worker(primaryEngine)));
 
-          try {
-            send('status', {
-              id,
-              phase: 'loading-session',
-              message: 'Loading session context',
-            });
-
-            const detail = await getSessionDetail(id);
-            if (!detail) {
-              throw new Error('Session not found');
-            }
-
-            send('session-start', {
-              id,
-              title: detail.title,
-              index: index + 1,
-              total: ids.length,
-            });
-
-            const result = await generateSummaryWithFallback(detail, primaryEngine, {
-              onEvent: event => {
-                if (event.type === 'fallback') {
-                  cleanup();
-                  send('status', {
-                    id,
-                    phase: 'fallback',
-                    from: event.from,
-                    to: event.to,
-                    engineLabel: getSummaryEngineLabel(event.to),
-                    message: `${getSummaryEngineLabel(event.from)} failed, falling back to ${getSummaryEngineLabel(event.to)}`,
-                  });
-                  return;
-                }
-
-                if (event.type === 'attempt-start') {
-                  startSpinner(id, event.engine, event.fallback);
-                  return;
-                }
-
-                if (event.type === 'attempt-failed') {
-                  cleanup();
-                }
-              },
-              onStatus: status => {
-                send('status', {
-                  id,
-                  phase: 'running',
-                  engine: status.engine,
-                  engineLabel: getSummaryEngineLabel(status.engine),
-                  message: status.message,
-                  source: status.source,
-                });
-              },
-            });
-
-            cleanup();
-            send('status', {
-              id,
-              phase: 'persisting',
-              engine: result.engineUsed,
-              engineLabel: getSummaryEngineLabel(result.engineUsed),
-              message: 'Saving summary',
-            });
-
-            persistSessionSummary(id, result.summary);
-            results.push({ id, success: true });
-
-            send('session-complete', {
-              id,
-              summary: result.summary,
-              engine: result.engineUsed,
-              engineLabel: getSummaryEngineLabel(result.engineUsed),
-              fallbackUsed: result.fallbackUsed,
-            });
-          } catch (error) {
-            cleanup();
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            results.push({ id, success: false, error: message });
-            send('session-error', { id, error: message });
-          }
+        if (cancelled) {
+          return;
         }
 
         const successCount = results.filter(result => result.success).length;
@@ -177,10 +237,10 @@ export async function POST(request: NextRequest) {
         send('complete', { successCount, failureCount, results });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        cleanup();
+        stopAllSpinners();
         send('error', { error: message });
       } finally {
-        cleanup();
+        stopAllSpinners();
         close();
       }
     },

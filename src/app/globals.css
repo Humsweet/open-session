@@ -20,6 +20,9 @@
   --warning-subtle: rgba(255, 145, 0, 0.15);
   --danger: #ff5252;
   --danger-subtle: rgba(255, 82, 82, 0.15);
+  --thinking: #a78bfa;
+  --thinking-subtle: rgba(167, 139, 250, 0.08);
+  --thinking-border: rgba(167, 139, 250, 0.2);
   --slack: #7c5cff;
   --slack-subtle: rgba(124, 92, 255, 0.22);
 }

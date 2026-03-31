@@ -3,6 +3,7 @@ import { getSessionDetail } from '@/lib/parsers';
 import { getDb } from '@/lib/db/client';
 import { persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
+import { SessionStatus } from '@/lib/parsers/types';
 
 export async function GET(
   _request: NextRequest,
@@ -26,12 +27,14 @@ export async function GET(
       status: string;
       summary: string | null;
       custom_title: string | null;
+      summary_title_applied: number;
     } | undefined;
 
     if (state) {
-      detail.status = forcedClosed ? 'closed' : state.status as 'open' | 'closed';
+      detail.status = forcedClosed ? 'closed' : state.status as SessionStatus;
       if (state.summary) detail.summary = state.summary;
       if (state.custom_title) detail.title = state.custom_title;
+      detail.summaryTitleApplied = Boolean(state.summary_title_applied);
     } else if (forcedClosed) {
       detail.status = 'closed';
     }
@@ -52,16 +55,18 @@ export async function PATCH(
     const body = await request.json();
     const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status');
     const hasCustomTitle = Object.prototype.hasOwnProperty.call(body, 'customTitle');
+    const hasApplySummaryTitle = Object.prototype.hasOwnProperty.call(body, 'applySummaryTitle');
 
-    if (!hasStatus && !hasCustomTitle) {
+    if (!hasStatus && !hasCustomTitle && !hasApplySummaryTitle) {
       return NextResponse.json({ error: 'No updates provided' }, { status: 400 });
     }
 
-    const status = hasStatus ? body.status : 'open';
+    const status = hasStatus ? body.status as SessionStatus : 'open';
     const customTitle =
       hasCustomTitle && typeof body.customTitle === 'string'
         ? body.customTitle.trim() || null
         : null;
+    const applySummaryTitle = hasApplySummaryTitle ? Boolean(body.applySummaryTitle) : false;
 
     const db = getDb();
     const detail = await getSessionDetail(id);
@@ -69,8 +74,8 @@ export async function PATCH(
       detail && isSummaryHelperSession(detail) ? 'closed' : status;
 
     db.prepare(`
-      INSERT INTO session_state (session_id, status, custom_title, updated_at)
-      VALUES (?, ?, ?, datetime('now'))
+      INSERT INTO session_state (session_id, status, custom_title, summary_title_applied, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
       ON CONFLICT(session_id) DO UPDATE SET
         status = CASE
           WHEN ? THEN excluded.status
@@ -80,8 +85,22 @@ export async function PATCH(
           WHEN ? THEN excluded.custom_title
           ELSE session_state.custom_title
         END,
+        summary_title_applied = CASE
+          WHEN ? THEN excluded.summary_title_applied
+          WHEN ? THEN 0
+          ELSE session_state.summary_title_applied
+        END,
         updated_at = datetime('now')
-    `).run(id, forcedStatus, customTitle, hasStatus ? 1 : 0, hasCustomTitle ? 1 : 0);
+    `).run(
+      id,
+      forcedStatus,
+      customTitle,
+      applySummaryTitle ? 1 : 0,
+      hasStatus ? 1 : 0,
+      hasCustomTitle ? 1 : 0,
+      hasApplySummaryTitle ? 1 : 0,
+      hasCustomTitle ? 1 : 0
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

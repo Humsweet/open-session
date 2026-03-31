@@ -28,6 +28,7 @@ function initSchema(db: Database.Database) {
       status TEXT NOT NULL DEFAULT 'open',
       summary TEXT,
       custom_title TEXT,
+      summary_title_applied INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -36,6 +37,12 @@ function initSchema(db: Database.Database) {
       value TEXT NOT NULL
     );
   `);
+
+  const columns = db.prepare("PRAGMA table_info(session_state)").all() as Array<{ name: string }>;
+  const hasSummaryTitleApplied = columns.some(column => column.name === 'summary_title_applied');
+  if (!hasSummaryTitleApplied) {
+    db.exec("ALTER TABLE session_state ADD COLUMN summary_title_applied INTEGER NOT NULL DEFAULT 0");
+  }
 
   // Set defaults
   const insertSetting = db.prepare(
