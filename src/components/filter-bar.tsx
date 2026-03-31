@@ -39,6 +39,7 @@ export interface FilterState {
   tool: ToolType | 'all';
   status: SessionStatus | 'all';
   origin: SessionOrigin | 'all';
+  pinned: 'all' | 'only';
   search: string;
   sortBy: 'updatedAt' | 'createdAt';
   sortOrder: 'asc' | 'desc';
@@ -96,6 +97,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
   const [activeTool, setActiveTool] = useState<ToolType | 'all'>('all');
   const [activeStatus, setActiveStatus] = useState<SessionStatus | 'all'>('open');
   const [activeOrigin, setActiveOrigin] = useState<SessionOrigin | 'all'>('local');
+  const [activePinned, setActivePinned] = useState<'all' | 'only'>('all');
   const [search, setSearch] = useState('');
   const [activeSort, setActiveSort] = useState('updatedAt-desc');
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -106,6 +108,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
       tool: ToolType | 'all';
       status: SessionStatus | 'all';
       origin: SessionOrigin | 'all';
+      pinned: 'all' | 'only';
       search: string;
       sort: string;
     }>
@@ -113,6 +116,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
     const tool = next.tool ?? activeTool;
     const status = next.status ?? activeStatus;
     const origin = next.origin ?? activeOrigin;
+    const pinned = next.pinned ?? activePinned;
     const nextSearch = next.search ?? search;
     const sort = next.sort ?? activeSort;
     const [sortBy, sortOrder] = sort.split('-') as ['updatedAt' | 'createdAt', 'asc' | 'desc'];
@@ -120,6 +124,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
     if (next.tool !== undefined) setActiveTool(tool);
     if (next.status !== undefined) setActiveStatus(status);
     if (next.origin !== undefined) setActiveOrigin(origin);
+    if (next.pinned !== undefined) setActivePinned(pinned);
     if (next.search !== undefined) setSearch(nextSearch);
     if (next.sort !== undefined) setActiveSort(sort);
 
@@ -127,6 +132,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
       tool,
       status,
       origin,
+      pinned,
       search: nextSearch,
       sortBy,
       sortOrder,
@@ -137,14 +143,16 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
   const activeExtraFilters = [
     activeTool !== 'all',
     activeStatus === 'all' || activeStatus === 'dropped',
+    activePinned === 'only',
   ].filter(Boolean).length;
 
   const querySummary = useMemo(() => {
     const parts = [getStatusLabel(activeStatus), getOriginLabel(activeOrigin), currentSortLabel];
+    if (activePinned === 'only') parts.push('Pinned only');
     if (activeTool !== 'all') parts.push(getToolLabel(activeTool));
     if (search.trim()) parts.push(`Search: "${search.trim()}"`);
     return parts.join(' · ');
-  }, [activeOrigin, activeStatus, activeTool, currentSortLabel, search]);
+  }, [activeOrigin, activePinned, activeStatus, activeTool, currentSortLabel, search]);
 
   return (
     <div className="mb-4 space-y-3">
@@ -306,6 +314,30 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
 
             <div className="space-y-2">
               <p className="text-[11px] font-medium uppercase tracking-[0.08em]" style={{ color: 'var(--text-tertiary)' }}>
+                Pin
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { value: 'all' as const, label: 'All sessions' },
+                  { value: 'only' as const, label: 'Pinned only' },
+                ].map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => applyFilters({ pinned: option.value })}
+                    className="px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors"
+                    style={{
+                      backgroundColor: activePinned === option.value ? 'var(--accent-subtle)' : 'var(--bg-tertiary)',
+                      color: activePinned === option.value ? 'var(--accent)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium uppercase tracking-[0.08em]" style={{ color: 'var(--text-tertiary)' }}>
                 Tool
               </p>
               <div className="flex flex-wrap gap-1">
@@ -328,7 +360,7 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
             {activeExtraFilters > 0 && (
               <div className="ml-auto">
                 <button
-                  onClick={() => applyFilters({ tool: 'all', status: 'open' })}
+                  onClick={() => applyFilters({ tool: 'all', status: 'open', pinned: 'all' })}
                   className="px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors"
                   style={{
                     backgroundColor: 'var(--bg-tertiary)',

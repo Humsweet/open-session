@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
-import { OriginBadge, ToolBadge, StatusBadge } from './tool-icon';
+import { OriginBadge, PinBadge, ToolBadge, StatusBadge } from './tool-icon';
 import { extractSummaryOverview, extractSummaryTitle } from '@/lib/summarizer/summary-format';
-import { MessageSquare, Folder, Clock, MoreHorizontal, CircleDot, CircleOff, Trash2, Sparkles, Check, Pencil, X } from 'lucide-react';
+import { MessageSquare, Folder, Clock, MoreHorizontal, CircleDot, CircleOff, Trash2, Sparkles, Check, Pencil, X, Pin, PinOff } from 'lucide-react';
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -28,6 +28,7 @@ interface SessionCardProps {
   onRename?: (sessionId: string, title: string) => Promise<void> | void;
   onSummarize?: (sessionId: string) => Promise<void> | void;
   onStatusChange?: (sessionId: string, status: SessionStatus) => Promise<void> | void;
+  onPinnedChange?: (sessionId: string, pinned: boolean) => Promise<void> | void;
   applyingTitle?: boolean;
   renaming?: boolean;
   summarizing?: boolean;
@@ -44,6 +45,7 @@ export function SessionCard({
   onRename,
   onSummarize,
   onStatusChange,
+  onPinnedChange,
   applyingTitle = false,
   renaming = false,
   summarizing = false,
@@ -138,6 +140,7 @@ export function SessionCard({
       )}
 
       <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+        <PinBadge pinned={session.pinned} />
         <ToolBadge tool={session.tool} />
         <OriginBadge origin={session.origin} />
         <StatusBadge status={session.status} />
@@ -323,6 +326,27 @@ export function SessionCard({
                 boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
               }}
             >
+              <button
+                onClick={event => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void onPinnedChange?.(session.id, !session.pinned);
+                  setMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors"
+                style={{ color: session.pinned ? 'var(--warning, #f59e0b)' : 'var(--text-secondary)' }}
+                onMouseEnter={event => {
+                  event.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+                  event.currentTarget.style.color = session.pinned ? 'var(--text-secondary)' : '#f59e0b';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.backgroundColor = 'transparent';
+                  event.currentTarget.style.color = session.pinned ? 'var(--warning, #f59e0b)' : 'var(--text-secondary)';
+                }}
+              >
+                {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                {session.pinned ? 'Unpin' : 'Pin'}
+              </button>
               <button
                 onClick={event => {
                   event.preventDefault();

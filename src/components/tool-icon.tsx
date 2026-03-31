@@ -1,7 +1,7 @@
 'use client';
 
 import { ToolType } from '@/lib/parsers/types';
-import { Terminal, Cpu, Sparkles, Bot, MessageSquare } from 'lucide-react';
+import { Terminal, Cpu, Sparkles, Bot, MessageSquare, Pin } from 'lucide-react';
 
 const toolConfig: Record<ToolType, { label: string; color: string; icon: typeof Terminal }> = {
   'claude-code': { label: 'Claude', color: '#d97706', icon: Terminal },
@@ -66,6 +66,23 @@ export function OriginBadge({ origin }: { origin: 'local' | 'slack-bot' }) {
     >
       <MessageSquare size={12} />
       Slack Bot
+    </span>
+  );
+}
+
+export function PinBadge({ pinned }: { pinned?: boolean }) {
+  if (!pinned) return null;
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+      style={{
+        backgroundColor: 'rgba(245, 158, 11, 0.14)',
+        color: '#f59e0b',
+      }}
+    >
+      <Pin size={12} />
+      Pinned
     </span>
   );
 }

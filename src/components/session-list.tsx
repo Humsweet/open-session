@@ -15,6 +15,7 @@ export function SessionList() {
     tool: 'all',
     status: 'open',
     origin: 'local',
+    pinned: 'all',
     search: '',
     sortBy: 'updatedAt',
     sortOrder: 'desc',
@@ -50,6 +51,7 @@ export function SessionList() {
       if (filters.tool !== 'all') params.set('tool', filters.tool);
       if (filters.status !== 'all') params.set('status', filters.status);
       if (filters.origin !== 'all') params.set('origin', filters.origin);
+      if (filters.pinned !== 'all') params.set('pinned', filters.pinned);
       if (filters.search) params.set('search', filters.search);
       params.set('sortBy', filters.sortBy);
       params.set('sortOrder', filters.sortOrder);
@@ -187,6 +189,40 @@ export function SessionList() {
     } catch (error) {
       console.error('Status update failed:', error);
       setBatchMessage({ tone: 'error', text: 'Status update failed.' });
+    }
+  };
+
+  const updatePinned = async (sessionId: string, pinned: boolean) => {
+    setBatchMessage(null);
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Pin update failed');
+      }
+
+      setSessions(current =>
+        [...current]
+          .map(session => (session.id === sessionId ? { ...session, pinned } : session))
+          .filter(session => filters.pinned !== 'only' || Boolean(session.pinned))
+          .sort((a, b) => {
+            const pinnedDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+            if (pinnedDiff !== 0) return pinnedDiff;
+
+            const field = filters.sortBy;
+            const ta = new Date(a[field] || a.updatedAt).getTime();
+            const tb = new Date(b[field] || b.updatedAt).getTime();
+            return filters.sortOrder === 'asc' ? ta - tb : tb - ta;
+          })
+      );
+    } catch (error) {
+      console.error('Pin update failed:', error);
+      setBatchMessage({ tone: 'error', text: 'Pin update failed.' });
     }
   };
 
@@ -760,6 +796,7 @@ export function SessionList() {
               onRename={renameSession}
               onSummarize={summarizeSession}
               onStatusChange={updateStatus}
+              onPinnedChange={updatePinned}
               applyingTitle={applyingTitleId === session.id}
               renaming={renamingId === session.id}
               summarizing={summarizingId === session.id}

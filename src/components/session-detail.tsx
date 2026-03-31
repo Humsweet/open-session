@@ -3,12 +3,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { SessionDetail as SessionDetailType } from '@/lib/parsers/types';
-import { OriginBadge, ToolBadge, StatusBadge } from './tool-icon';
+import { OriginBadge, PinBadge, ToolBadge, StatusBadge } from './tool-icon';
 import { SimpleMarkdown } from './simple-markdown';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
 import {
   ArrowLeft, MessageSquare, Folder, Clock, Sparkles,
-  Copy, ChevronDown, ChevronRight, Pencil, Check, X, CircleDot, CircleOff, Trash2
+  Copy, ChevronDown, ChevronRight, Pencil, Check, X, CircleDot, CircleOff, Trash2, Pin, PinOff
 } from 'lucide-react';
 import {
   groupMessages,
@@ -137,6 +137,16 @@ export function SessionDetailView({ id }: { id: string }) {
     });
     setSession({ ...session, status: nextStatus });
     setShowStatusMenu(false);
+  };
+
+  const setPinned = async (nextPinned: boolean) => {
+    if (!session) return;
+    await fetch(`/api/sessions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: nextPinned }),
+    });
+    setSession({ ...session, pinned: nextPinned });
   };
 
   const summarize = async () => {
@@ -386,6 +396,7 @@ export function SessionDetailView({ id }: { id: string }) {
             </div>
           )}
           <div className="flex items-center gap-3 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+            <PinBadge pinned={session.pinned} />
             <ToolBadge tool={session.tool} />
             <OriginBadge origin={session.origin} />
             <StatusBadge status={session.status} />
@@ -404,6 +415,18 @@ export function SessionDetailView({ id }: { id: string }) {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setPinned(!session.pinned)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors"
+            style={{
+              backgroundColor: session.pinned ? 'rgba(245, 158, 11, 0.14)' : 'var(--bg-tertiary)',
+              borderColor: session.pinned ? '#f59e0b' : 'var(--border)',
+              color: session.pinned ? '#f59e0b' : 'var(--text-secondary)',
+            }}
+          >
+            {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            {session.pinned ? 'Unpin' : 'Pin'}
+          </button>
           <div className="relative">
             <button
               onClick={() => setShowStatusMenu(current => !current)}

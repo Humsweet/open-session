@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionDetail } from '@/lib/parsers';
 import { getDb } from '@/lib/db/client';
-import { persistSessionsClosed } from '@/lib/session-state';
+import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
 import { SessionStatus } from '@/lib/parsers/types';
+
+function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpdatedAt?: string | null) {
+  if (!statusUpdatedAt) return false;
+
+  const sessionTime = new Date(sessionUpdatedAt).getTime();
+  const statusTime = new Date(statusUpdatedAt).getTime();
+
+  if (Number.isNaN(sessionTime) || Number.isNaN(statusTime)) {
+    return false;
+  }
+
+  return sessionTime > statusTime;
+}
 
 export async function GET(
   _request: NextRequest,
@@ -28,13 +41,25 @@ export async function GET(
       summary: string | null;
       custom_title: string | null;
       summary_title_applied: number;
+      pinned: number;
+      status_updated_at: string | null;
     } | undefined;
 
     if (state) {
-      detail.status = forcedClosed ? 'closed' : state.status as SessionStatus;
+      const autoReopened =
+        !forcedClosed &&
+        state.status === 'closed' &&
+        hasSessionActivitySinceStatusChange(detail.updatedAt, state.status_updated_at);
+
+      if (autoReopened) {
+        persistSessionStatus(id, 'open');
+      }
+
+      detail.status = forcedClosed ? 'closed' : autoReopened ? 'open' : state.status as SessionStatus;
       if (state.summary) detail.summary = state.summary;
       if (state.custom_title) detail.title = state.custom_title;
       detail.summaryTitleApplied = Boolean(state.summary_title_applied);
+      detail.pinned = Boolean(state.pinned);
     } else if (forcedClosed) {
       detail.status = 'closed';
     }
@@ -56,8 +81,9 @@ export async function PATCH(
     const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status');
     const hasCustomTitle = Object.prototype.hasOwnProperty.call(body, 'customTitle');
     const hasApplySummaryTitle = Object.prototype.hasOwnProperty.call(body, 'applySummaryTitle');
+    const hasPinned = Object.prototype.hasOwnProperty.call(body, 'pinned');
 
-    if (!hasStatus && !hasCustomTitle && !hasApplySummaryTitle) {
+    if (!hasStatus && !hasCustomTitle && !hasApplySummaryTitle && !hasPinned) {
       return NextResponse.json({ error: 'No updates provided' }, { status: 400 });
     }
 
@@ -67,6 +93,8 @@ export async function PATCH(
         ? body.customTitle.trim() || null
         : null;
     const applySummaryTitle = hasApplySummaryTitle ? Boolean(body.applySummaryTitle) : false;
+    const pinned = hasPinned ? Boolean(body.pinned) : false;
+    const pinnedAt = hasPinned && pinned ? new Date().toISOString() : null;
 
     const db = getDb();
     const detail = await getSessionDetail(id);
@@ -74,12 +102,16 @@ export async function PATCH(
       detail && isSummaryHelperSession(detail) ? 'closed' : status;
 
     db.prepare(`
-      INSERT INTO session_state (session_id, status, custom_title, summary_title_applied, updated_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
+      INSERT INTO session_state (session_id, status, status_updated_at, custom_title, summary_title_applied, pinned, pinned_at, updated_at)
+      VALUES (?, ?, datetime('now'), ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(session_id) DO UPDATE SET
         status = CASE
           WHEN ? THEN excluded.status
           ELSE session_state.status
+        END,
+        status_updated_at = CASE
+          WHEN ? THEN datetime('now')
+          ELSE session_state.status_updated_at
         END,
         custom_title = CASE
           WHEN ? THEN excluded.custom_title
@@ -90,16 +122,29 @@ export async function PATCH(
           WHEN ? THEN 0
           ELSE session_state.summary_title_applied
         END,
+        pinned = CASE
+          WHEN ? THEN excluded.pinned
+          ELSE session_state.pinned
+        END,
+        pinned_at = CASE
+          WHEN ? THEN excluded.pinned_at
+          ELSE session_state.pinned_at
+        END,
         updated_at = datetime('now')
     `).run(
       id,
       forcedStatus,
       customTitle,
       applySummaryTitle ? 1 : 0,
+      pinned ? 1 : 0,
+      pinnedAt,
+      hasStatus ? 1 : 0,
       hasStatus ? 1 : 0,
       hasCustomTitle ? 1 : 0,
       hasApplySummaryTitle ? 1 : 0,
-      hasCustomTitle ? 1 : 0
+      hasCustomTitle ? 1 : 0,
+      hasPinned ? 1 : 0,
+      hasPinned ? 1 : 0
     );
 
     return NextResponse.json({ success: true });

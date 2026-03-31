@@ -4,10 +4,11 @@ import { SessionStatus } from './parsers/types';
 export function persistSessionStatus(sessionId: string, status: SessionStatus) {
   const db = getDb();
   db.prepare(`
-    INSERT INTO session_state (session_id, status, updated_at)
-    VALUES (?, ?, datetime('now'))
+    INSERT INTO session_state (session_id, status, status_updated_at, updated_at)
+    VALUES (?, ?, datetime('now'), datetime('now'))
     ON CONFLICT(session_id) DO UPDATE SET
       status = excluded.status,
+      status_updated_at = datetime('now'),
       updated_at = datetime('now')
   `).run(sessionId, status);
 }
@@ -34,10 +35,11 @@ export function persistSessionsClosed(sessionIds: string[]) {
   const db = getDb();
   const closeMany = db.transaction((ids: string[]) => {
     const statement = db.prepare(`
-      INSERT INTO session_state (session_id, status, updated_at)
-      VALUES (?, 'closed', datetime('now'))
+      INSERT INTO session_state (session_id, status, status_updated_at, updated_at)
+      VALUES (?, 'closed', datetime('now'), datetime('now'))
       ON CONFLICT(session_id) DO UPDATE SET
         status = 'closed',
+        status_updated_at = datetime('now'),
         updated_at = datetime('now')
     `);
 

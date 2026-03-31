@@ -26,9 +26,12 @@ function initSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS session_state (
       session_id TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'open',
+      status_updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       summary TEXT,
       custom_title TEXT,
       summary_title_applied INTEGER NOT NULL DEFAULT 0,
+      pinned INTEGER NOT NULL DEFAULT 0,
+      pinned_at TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -40,8 +43,21 @@ function initSchema(db: Database.Database) {
 
   const columns = db.prepare("PRAGMA table_info(session_state)").all() as Array<{ name: string }>;
   const hasSummaryTitleApplied = columns.some(column => column.name === 'summary_title_applied');
+  const hasPinned = columns.some(column => column.name === 'pinned');
+  const hasPinnedAt = columns.some(column => column.name === 'pinned_at');
+  const hasStatusUpdatedAt = columns.some(column => column.name === 'status_updated_at');
+  if (!hasStatusUpdatedAt) {
+    db.exec("ALTER TABLE session_state ADD COLUMN status_updated_at TEXT");
+    db.exec("UPDATE session_state SET status_updated_at = COALESCE(updated_at, datetime('now')) WHERE status_updated_at IS NULL");
+  }
   if (!hasSummaryTitleApplied) {
     db.exec("ALTER TABLE session_state ADD COLUMN summary_title_applied INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!hasPinned) {
+    db.exec("ALTER TABLE session_state ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!hasPinnedAt) {
+    db.exec("ALTER TABLE session_state ADD COLUMN pinned_at TEXT");
   }
 
   // Set defaults

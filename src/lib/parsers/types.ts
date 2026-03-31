@@ -15,6 +15,7 @@ export interface UnifiedSession {
   lastUserMessage: string;
   summary?: string;
   summaryTitleApplied?: boolean;
+  pinned?: boolean;
   rawPath: string;
   origin: SessionOrigin;
   agentSource?: string;
