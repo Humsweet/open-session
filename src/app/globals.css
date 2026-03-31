@@ -20,19 +20,21 @@
   --warning-subtle: rgba(255, 145, 0, 0.15);
   --danger: #ff5252;
   --danger-subtle: rgba(255, 82, 82, 0.15);
+  --slack: #7c5cff;
+  --slack-subtle: rgba(124, 92, 255, 0.22);
 }
 
 @theme inline {
   --color-background: var(--bg-primary);
   --color-foreground: var(--text-primary);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", "SF Mono", ui-monospace, monospace;
 }
 
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Scrollbar styling */

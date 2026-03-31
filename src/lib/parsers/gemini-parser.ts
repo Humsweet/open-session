@@ -27,6 +27,7 @@ export class GeminiParser implements SessionParser {
           id: `gemini-${sessionId}`,
           tool: 'gemini-cli',
           status: 'open',
+          origin: 'local',
           title: `Gemini Session ${sessionId.slice(0, 8)}`,
           cwd: '',
           createdAt: stat.birthtime.toISOString(),

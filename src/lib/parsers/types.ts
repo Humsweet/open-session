@@ -1,5 +1,6 @@
 export type ToolType = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
 export type SessionStatus = 'open' | 'closed';
+export type SessionOrigin = 'local' | 'slack-bot';
 
 export interface UnifiedSession {
   id: string;
@@ -14,6 +15,10 @@ export interface UnifiedSession {
   lastUserMessage: string;
   summary?: string;
   rawPath: string;
+  origin: SessionOrigin;
+  agentSource?: string;
+  slackThreadTs?: string;
+  slackUserId?: string;
 }
 
 export interface SessionMessage {

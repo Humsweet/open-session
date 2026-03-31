@@ -1,0 +1,49 @@
+import { getDb } from './db/client';
+import { SessionStatus } from './parsers/types';
+
+export function persistSessionStatus(sessionId: string, status: SessionStatus) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO session_state (session_id, status, updated_at)
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(session_id) DO UPDATE SET
+      status = excluded.status,
+      updated_at = datetime('now')
+  `).run(sessionId, status);
+}
+
+export function persistSessionSummary(sessionId: string, summary: string) {
+  const db = getDb();
+  const existing = db
+    .prepare('SELECT status FROM session_state WHERE session_id = ?')
+    .get(sessionId) as { status: SessionStatus } | undefined;
+
+  db.prepare(`
+    INSERT INTO session_state (session_id, status, summary, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(session_id) DO UPDATE SET
+      summary = excluded.summary,
+      updated_at = datetime('now')
+  `).run(sessionId, existing?.status || 'open', summary);
+}
+
+export function persistSessionsClosed(sessionIds: string[]) {
+  if (sessionIds.length === 0) return;
+
+  const db = getDb();
+  const closeMany = db.transaction((ids: string[]) => {
+    const statement = db.prepare(`
+      INSERT INTO session_state (session_id, status, updated_at)
+      VALUES (?, 'closed', datetime('now'))
+      ON CONFLICT(session_id) DO UPDATE SET
+        status = 'closed',
+        updated_at = datetime('now')
+    `);
+
+    for (const id of ids) {
+      statement.run(id);
+    }
+  });
+
+  closeMany(sessionIds);
+}

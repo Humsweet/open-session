@@ -8,7 +8,7 @@ export interface AppConfig {
     codex: string;
     gemini: string;
   };
-  summaryCli: 'claude-code' | 'codex-cli' | 'gemini-cli';
+  summaryCli: 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
 }
 
 const home = process.env.USERPROFILE || process.env.HOME || os.homedir();

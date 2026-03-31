@@ -66,6 +66,7 @@ export class CopilotParser implements SessionParser {
           id: `copilot-${sessionId}`,
           tool: 'copilot-cli',
           status: 'open',
+          origin: 'local',
           title,
           cwd,
           createdAt,

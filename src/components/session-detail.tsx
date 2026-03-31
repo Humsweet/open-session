@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { SessionDetail as SessionDetailType, SessionMessage } from '@/lib/parsers/types';
-import { ToolBadge, StatusBadge } from './tool-icon';
+import { OriginBadge, ToolBadge, StatusBadge } from './tool-icon';
+import { SimpleMarkdown } from './simple-markdown';
+import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
 import {
   ArrowLeft, MessageSquare, Folder, Clock, Sparkles,
-  CheckCircle2, Circle, Copy, ChevronDown, ChevronRight, User, Bot
+  CheckCircle2, Circle, Copy, ChevronDown, ChevronRight, User, Bot, Pencil, Check, X
 } from 'lucide-react';
 
 function timeAgo(dateStr: string): string {
@@ -98,13 +100,26 @@ export function SessionDetailView({ id }: { id: string }) {
   const [session, setSession] = useState<SessionDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const [summaryStatus, setSummaryStatus] = useState('');
+  const [summaryEngine, setSummaryEngine] = useState('');
   const [showMessages, setShowMessages] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [savingRename, setSavingRename] = useState(false);
+  const [renameError, setRenameError] = useState('');
+
+  const summaryTitle = extractSummaryTitle(session?.summary);
+  const summaryBody = stripSummaryTitle(session?.summary);
 
   useEffect(() => {
     fetch(`/api/sessions/${id}`)
       .then(r => r.json())
-      .then(setSession)
+      .then(data => {
+        setSession(data);
+        setRenameValue(data.title ?? '');
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
@@ -122,16 +137,87 @@ export function SessionDetailView({ id }: { id: string }) {
 
   const summarize = async () => {
     setSummarizing(true);
+    setSummaryError('');
+    setSummaryStatus('Preparing summary');
+    setSummaryEngine('');
     try {
       const res = await fetch(`/api/sessions/${id}/summarize`, { method: 'POST' });
-      const data = await res.json();
-      if (data.summary && session) {
-        setSession({ ...session, summary: data.summary });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Summary failed');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const processEventBlock = (block: string) => {
+        const lines = block.split('\n');
+        let event = 'message';
+        const dataLines: string[] = [];
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            event = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trim());
+          }
+        }
+
+        if (dataLines.length === 0) return;
+        const payload = JSON.parse(dataLines.join('\n')) as {
+          error?: string;
+          summary?: string;
+          verb?: string;
+          message?: string;
+          engineLabel?: string;
+        };
+
+        if (payload.engineLabel) {
+          setSummaryEngine(payload.engineLabel);
+        }
+
+        if (event === 'status') {
+          setSummaryStatus(payload.verb || payload.message || 'Working');
+          return;
+        }
+
+        if (event === 'complete') {
+          if (!payload.summary) {
+            throw new Error('No summary returned');
+          }
+          setSummaryStatus('Complete');
+          setSession(current => (current ? { ...current, summary: payload.summary as string } : current));
+          return;
+        }
+
+        if (event === 'error') {
+          throw new Error(payload.error || 'Summary failed');
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+        let boundaryIndex = buffer.indexOf('\n\n');
+        while (boundaryIndex !== -1) {
+          const block = buffer.slice(0, boundaryIndex).trim();
+          buffer = buffer.slice(boundaryIndex + 2);
+          if (block) {
+            processEventBlock(block);
+          }
+          boundaryIndex = buffer.indexOf('\n\n');
+        }
+
+        if (done) break;
       }
     } catch (e) {
       console.error('Summary failed:', e);
+      setSummaryError(e instanceof Error ? e.message : 'Summary failed');
     } finally {
       setSummarizing(false);
+      setSummaryStatus('');
     }
   };
 
@@ -140,6 +226,60 @@ export function SessionDetailView({ id }: { id: string }) {
     navigator.clipboard.writeText(getResumeCommand(session));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const startRename = () => {
+    if (!session) return;
+    setRenameValue(session.title);
+    setRenameError('');
+    setIsRenaming(true);
+  };
+
+  const cancelRename = () => {
+    if (!session) return;
+    setRenameValue(session.title);
+    setRenameError('');
+    setIsRenaming(false);
+  };
+
+  const saveRename = async (overrideTitle?: string) => {
+    if (!session) return;
+    const nextTitle = (overrideTitle ?? renameValue).trim();
+
+    if (!nextTitle) {
+      setRenameError('Title cannot be empty');
+      return;
+    }
+
+    if (nextTitle === session.title) {
+      setRenameError('');
+      setIsRenaming(false);
+      return;
+    }
+
+    setSavingRename(true);
+    setRenameError('');
+
+    try {
+      const res = await fetch(`/api/sessions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customTitle: nextTitle }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Rename failed');
+      }
+
+      setSession({ ...session, title: nextTitle });
+      setRenameValue(nextTitle);
+      setIsRenaming(false);
+    } catch (e) {
+      console.error('Rename failed:', e);
+      setRenameError('Failed to save title');
+    } finally {
+      setSavingRename(false);
+    }
   };
 
   if (loading) {
@@ -170,12 +310,82 @@ export function SessionDetailView({ id }: { id: string }) {
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            {session.title}
-          </h1>
+        <div className="min-w-0 flex-1">
+          {isRenaming ? (
+            <div className="mb-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={renameValue}
+                  onChange={e => setRenameValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveRename();
+                    if (e.key === 'Escape') cancelRename();
+                  }}
+                  autoFocus
+                  className="w-full max-w-xl rounded-md border px-3 py-2 text-[13px] outline-none"
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    borderColor: renameError ? 'var(--danger)' : 'var(--border)',
+                    color: 'var(--text-primary)',
+                  }}
+                  placeholder="Enter session title"
+                />
+                <button
+                  onClick={() => saveRename()}
+                  disabled={savingRename}
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-md text-[12px] font-medium transition-colors"
+                  style={{
+                    backgroundColor: 'var(--accent-subtle)',
+                    color: 'var(--accent)',
+                    opacity: savingRename ? 0.6 : 1,
+                  }}
+                >
+                  <Check size={13} />
+                  Save
+                </button>
+                <button
+                  onClick={cancelRename}
+                  disabled={savingRename}
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-md text-[12px] font-medium border transition-colors"
+                  style={{
+                    backgroundColor: 'var(--bg-tertiary)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--text-secondary)',
+                    opacity: savingRename ? 0.6 : 1,
+                  }}
+                >
+                  <X size={13} />
+                  Cancel
+                </button>
+              </div>
+              {renameError && (
+                <p className="mt-1 text-[11px]" style={{ color: 'var(--danger)' }}>
+                  {renameError}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 mb-2">
+              <h1 className="text-base font-semibold min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>
+                {session.title}
+              </h1>
+              <button
+                onClick={startRename}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors flex-shrink-0"
+                style={{
+                  backgroundColor: 'var(--bg-tertiary)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <Pencil size={11} />
+                Rename
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-3 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
             <ToolBadge tool={session.tool} />
+            <OriginBadge origin={session.origin} />
             <StatusBadge status={session.status} />
             <span className="flex items-center gap-1">
               <MessageSquare size={12} /> {session.messageCount} messages
@@ -220,6 +430,47 @@ export function SessionDetailView({ id }: { id: string }) {
         </div>
       </div>
 
+      {session.origin === 'slack-bot' && (
+        <div
+          className="mb-5 rounded-lg border p-4"
+          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}
+        >
+          <h2 className="text-[13px] font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+            Source
+          </h2>
+          <div className="grid gap-2 text-[12px]">
+            <div className="flex items-start justify-between gap-3">
+              <span style={{ color: 'var(--text-tertiary)' }}>Origin</span>
+              <span style={{ color: 'var(--text-primary)' }}>Slack Bot</span>
+            </div>
+            {session.agentSource && (
+              <div className="flex items-start justify-between gap-3">
+                <span style={{ color: 'var(--text-tertiary)' }}>Agent source</span>
+                <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+                  {session.agentSource}
+                </code>
+              </div>
+            )}
+            {session.slackThreadTs && (
+              <div className="flex items-start justify-between gap-3">
+                <span style={{ color: 'var(--text-tertiary)' }}>Slack thread</span>
+                <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+                  {session.slackThreadTs}
+                </code>
+              </div>
+            )}
+            {session.slackUserId && (
+              <div className="flex items-start justify-between gap-3">
+                <span style={{ color: 'var(--text-tertiary)' }}>Slack user</span>
+                <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+                  {session.slackUserId}
+                </code>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Summary Panel */}
       <div className="mb-5 rounded-lg border p-4" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
         <div className="flex items-center justify-between mb-2">
@@ -240,13 +491,62 @@ export function SessionDetailView({ id }: { id: string }) {
             {summarizing ? '⟳ Generating...' : '✨ Generate Summary'}
           </button>
         </div>
+        {summarizing && (
+          <div className="mb-3 flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+            <span className="inline-block h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent)' }} />
+            <span>{summaryStatus || 'Working'}</span>
+            {summaryEngine && (
+              <span
+                className="px-1.5 py-0.5 rounded"
+                style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+              >
+                {summaryEngine}
+              </span>
+            )}
+          </div>
+        )}
         {session.summary ? (
-          <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
-            {session.summary}
-          </p>
+          <div>
+            {summaryTitle && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                <div className="min-w-0">
+                  <p className="text-[11px] mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Suggested title
+                  </p>
+                  <p className="text-[13px] font-medium break-words" style={{ color: 'var(--text-primary)' }}>
+                    {summaryTitle}
+                  </p>
+                </div>
+                <button
+                  onClick={() => saveRename(summaryTitle)}
+                  disabled={savingRename || !summaryTitle || summaryTitle === session.title}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium border transition-colors flex-shrink-0"
+                  style={{
+                    backgroundColor: summaryTitle === session.title ? 'var(--bg-secondary)' : 'var(--accent-subtle)',
+                    borderColor: summaryTitle === session.title ? 'var(--border)' : 'var(--accent)',
+                    color: summaryTitle === session.title ? 'var(--text-tertiary)' : 'var(--accent)',
+                    opacity: savingRename ? 0.6 : 1,
+                  }}
+                >
+                  <Check size={12} />
+                  {summaryTitle === session.title ? 'Applied' : 'Apply Name'}
+                </button>
+              </div>
+            )}
+            <SimpleMarkdown
+              content={summaryBody || session.summary}
+              className="text-[12.5px] leading-relaxed"
+            />
+          </div>
         ) : (
           <p className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
             No summary yet. Click &quot;Generate Summary&quot; to create one using your local AI CLI.
+          </p>
+        )}
+        {summaryError && (
+          <p className="mt-3 text-[12px]" style={{ color: 'var(--danger)' }}>
+            {summaryError}
           </p>
         )}
       </div>

@@ -1,14 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Terminal, Cpu, Bot } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Terminal, Cpu, Bot, Sparkles } from 'lucide-react';
 
-type SummaryCli = 'claude-code' | 'codex-cli' | 'gemini-cli';
+type SummaryCli = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
 
 const cliOptions: { value: SummaryCli; label: string; icon: typeof Terminal }[] = [
-  { value: 'claude-code', label: 'Claude Code', icon: Terminal },
-  { value: 'codex-cli', label: 'Codex CLI', icon: Cpu },
-  { value: 'gemini-cli', label: 'Gemini CLI', icon: Bot },
+  { value: 'claude-code', label: 'Claude Code (Haiku)', icon: Terminal },
+  { value: 'copilot-cli', label: 'Copilot CLI (Claude Haiku 4.5)', icon: Sparkles },
+  { value: 'codex-cli', label: 'Codex CLI (GPT-5-Codex-Mini)', icon: Cpu },
+  { value: 'gemini-cli', label: 'Gemini CLI (Gemini 2.5 Flash-Lite)', icon: Bot },
 ];
 
 export default function SettingsPage() {
@@ -58,7 +59,7 @@ export default function SettingsPage() {
           AI Summary Engine
         </h2>
         <p className="text-[12px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          Choose which local CLI tool to use for generating session summaries. All use your existing Pro subscription — no API costs.
+          Choose which local CLI tool to use for generating session summaries. The selected engine is persisted in the backend, and each engine uses its low-cost summary model automatically.
         </p>
 
         <div className="space-y-1.5">

@@ -127,6 +127,7 @@ export class ClaudeParser implements SessionParser {
             id: `claude-${sessionId}`,
             tool: 'claude-code',
             status: 'open',
+            origin: 'local',
             title,
             cwd,
             createdAt,

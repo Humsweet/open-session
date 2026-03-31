@@ -7,11 +7,6 @@ function getCodexSessionsDir(): string {
   return path.join(home, '.codex', 'sessions');
 }
 
-function getCodexDbPath(): string {
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(home, '.codex', 'state_5.sqlite');
-}
-
 export class CodexParser implements SessionParser {
   async scan(): Promise<UnifiedSession[]> {
     const sessionsDir = getCodexSessionsDir();
@@ -39,7 +34,7 @@ export class CodexParser implements SessionParser {
           try {
             const obj = JSON.parse(line);
 
-            if (obj.type === 'session_meta') {
+            if (obj.type === 'session_meta' && !sessionId) {
               sessionId = obj.payload?.id || path.basename(filePath, '.jsonl');
               cwd = obj.payload?.cwd || '';
               createdAt = obj.timestamp || '';
@@ -85,6 +80,7 @@ export class CodexParser implements SessionParser {
           id: `codex-${sessionId}`,
           tool: 'codex-cli',
           status: 'open',
+          origin: 'local',
           title,
           cwd: cwd.replace(/^\\\\\?\\/, ''),
           createdAt,
