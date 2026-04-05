@@ -5,11 +5,20 @@ import { SessionOrigin, SessionStatus } from '@/lib/parsers/types';
 import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
 
+function parseAsUtc(s: string): number {
+  // SQLite datetime('now') produces "YYYY-MM-DD HH:MM:SS" without timezone —
+  // JS parses that as local time. Normalize to UTC by appending 'Z'.
+  if (s && !s.endsWith('Z') && !s.includes('+') && !s.includes('T')) {
+    return new Date(s.replace(' ', 'T') + 'Z').getTime();
+  }
+  return new Date(s).getTime();
+}
+
 function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpdatedAt?: string | null) {
   if (!statusUpdatedAt) return false;
 
-  const sessionTime = new Date(sessionUpdatedAt).getTime();
-  const statusTime = new Date(statusUpdatedAt).getTime();
+  const sessionTime = parseAsUtc(sessionUpdatedAt);
+  const statusTime = parseAsUtc(statusUpdatedAt);
 
   if (Number.isNaN(sessionTime) || Number.isNaN(statusTime)) {
     return false;

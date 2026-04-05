@@ -5,11 +5,11 @@ export function persistSessionStatus(sessionId: string, status: SessionStatus) {
   const db = getDb();
   db.prepare(`
     INSERT INTO session_state (session_id, status, status_updated_at, updated_at)
-    VALUES (?, ?, datetime('now'), datetime('now'))
+    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     ON CONFLICT(session_id) DO UPDATE SET
       status = excluded.status,
-      status_updated_at = datetime('now'),
-      updated_at = datetime('now')
+      status_updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+      updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
   `).run(sessionId, status);
 }
 
@@ -21,11 +21,11 @@ export function persistSessionSummary(sessionId: string, summary: string) {
 
   db.prepare(`
     INSERT INTO session_state (session_id, status, summary, custom_title, summary_title_applied, updated_at)
-    VALUES (?, ?, ?, ?, 0, datetime('now'))
+    VALUES (?, ?, ?, ?, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     ON CONFLICT(session_id) DO UPDATE SET
       summary = excluded.summary,
       summary_title_applied = 0,
-      updated_at = datetime('now')
+      updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
   `).run(sessionId, existing?.status || 'open', summary, existing?.custom_title || null);
 }
 
@@ -36,11 +36,11 @@ export function persistSessionsClosed(sessionIds: string[]) {
   const closeMany = db.transaction((ids: string[]) => {
     const statement = db.prepare(`
       INSERT INTO session_state (session_id, status, status_updated_at, updated_at)
-      VALUES (?, 'closed', datetime('now'), datetime('now'))
+      VALUES (?, 'closed', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
       ON CONFLICT(session_id) DO UPDATE SET
         status = 'closed',
-        status_updated_at = datetime('now'),
-        updated_at = datetime('now')
+        status_updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
     for (const id of ids) {

@@ -29,11 +29,11 @@ export async function POST(request: NextRequest) {
       const closeMany = db.transaction((sessionIds: string[]) => {
         const statement = db.prepare(`
           INSERT INTO session_state (session_id, status, status_updated_at, updated_at)
-          VALUES (?, 'closed', datetime('now'), datetime('now'))
+          VALUES (?, 'closed', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
           ON CONFLICT(session_id) DO UPDATE SET
             status = excluded.status,
-            status_updated_at = datetime('now'),
-            updated_at = datetime('now')
+            status_updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
         `);
 
         for (const id of sessionIds) {
@@ -61,11 +61,11 @@ export async function POST(request: NextRequest) {
       const summaryMap = new Map(stateRows.map(row => [row.session_id, row.summary]));
       const updateTitle = db.prepare(`
         INSERT INTO session_state (session_id, status, custom_title, summary_title_applied, updated_at)
-        VALUES (?, COALESCE((SELECT status FROM session_state WHERE session_id = ?), 'open'), ?, 1, datetime('now'))
+        VALUES (?, COALESCE((SELECT status FROM session_state WHERE session_id = ?), 'open'), ?, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         ON CONFLICT(session_id) DO UPDATE SET
           custom_title = excluded.custom_title,
           summary_title_applied = 1,
-          updated_at = datetime('now')
+          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
       `);
 
       const results = ids.map(id => {

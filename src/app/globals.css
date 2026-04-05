@@ -59,6 +59,22 @@ body {
   background: var(--text-tertiary);
 }
 
+/* Session card exit animation */
+.session-card-wrap {
+  max-height: 500px;
+  opacity: 1;
+  transition: opacity 200ms ease-out, max-height 300ms ease-out 100ms, margin 300ms ease-out 100ms;
+  overflow: visible;
+}
+
+.session-card-exit {
+  opacity: 0;
+  max-height: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  overflow: hidden;
+}
+
 /* Selection */
 ::selection {
   background: var(--accent-subtle);

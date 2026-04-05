@@ -5,11 +5,18 @@ import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
 import { SessionStatus } from '@/lib/parsers/types';
 
+function parseAsUtc(s: string): number {
+  if (s && !s.endsWith('Z') && !s.includes('+') && !s.includes('T')) {
+    return new Date(s.replace(' ', 'T') + 'Z').getTime();
+  }
+  return new Date(s).getTime();
+}
+
 function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpdatedAt?: string | null) {
   if (!statusUpdatedAt) return false;
 
-  const sessionTime = new Date(sessionUpdatedAt).getTime();
-  const statusTime = new Date(statusUpdatedAt).getTime();
+  const sessionTime = parseAsUtc(sessionUpdatedAt);
+  const statusTime = parseAsUtc(statusUpdatedAt);
 
   if (Number.isNaN(sessionTime) || Number.isNaN(statusTime)) {
     return false;
@@ -103,14 +110,14 @@ export async function PATCH(
 
     db.prepare(`
       INSERT INTO session_state (session_id, status, status_updated_at, custom_title, summary_title_applied, pinned, pinned_at, updated_at)
-      VALUES (?, ?, datetime('now'), ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
       ON CONFLICT(session_id) DO UPDATE SET
         status = CASE
           WHEN ? THEN excluded.status
           ELSE session_state.status
         END,
         status_updated_at = CASE
-          WHEN ? THEN datetime('now')
+          WHEN ? THEN strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
           ELSE session_state.status_updated_at
         END,
         custom_title = CASE
@@ -130,7 +137,7 @@ export async function PATCH(
           WHEN ? THEN excluded.pinned_at
           ELSE session_state.pinned_at
         END,
-        updated_at = datetime('now')
+        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `).run(
       id,
       forcedStatus,

@@ -7,10 +7,33 @@ import { FilterBar, FilterState } from './filter-bar';
 import { SessionCard } from './session-card';
 import { RefreshCw, Inbox, CheckCircle2, Circle, Sparkles, X } from 'lucide-react';
 
+const SESSIONS_CACHE_KEY = 'open-session:cache';
+
+function readCache(): { sessions: UnifiedSession[]; total: number } | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(SESSIONS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(sessions: UnifiedSession[], total: number) {
+  try {
+    if (typeof window === 'undefined') return;
+    const toStore = sessions.slice(0, 200);
+    localStorage.setItem(SESSIONS_CACHE_KEY, JSON.stringify({ sessions: toStore, total }));
+  } catch {
+    /* quota exceeded, ignore */
+  }
+}
+
 export function SessionList() {
   const [sessions, setSessions] = useState<UnifiedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [cacheRestored, setCacheRestored] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     tool: 'all',
     status: 'open',
@@ -43,6 +66,7 @@ export function SessionList() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [summarizingId, setSummarizingId] = useState<string | null>(null);
   const [summaryProgressById, setSummaryProgressById] = useState<Record<string, { status: string; engineLabel: string }>>({});
+  const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -61,6 +85,7 @@ export function SessionList() {
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
       setTotal(data.total || 0);
+      writeCache(nextSessions, data.total || 0);
       setSelectedIds(prev => {
         const visibleIds = new Set(nextSessions.map((session: UnifiedSession) => session.id));
         const nextSelected = new Set<string>();
@@ -75,6 +100,18 @@ export function SessionList() {
       setLoading(false);
     }
   }, [filters]);
+
+  // Restore cache on mount (client-only) to avoid hydration mismatch
+  useEffect(() => {
+    if (cacheRestored) return;
+    const cached = readCache();
+    if (cached) {
+      setSessions(cached.sessions);
+      setTotal(cached.total);
+      setLoading(false);
+    }
+    setCacheRestored(true);
+  }, [cacheRestored]);
 
   useEffect(() => {
     fetchSessions();
@@ -183,9 +220,30 @@ export function SessionList() {
         throw new Error('Status update failed');
       }
 
+      // Update status in local state immediately
       setSessions(current =>
         current.map(session => (session.id === sessionId ? { ...session, status } : session))
       );
+
+      // Animate card out if it should no longer be visible under current filter
+      const shouldRemove = filters.status !== 'all' && status !== filters.status;
+      if (shouldRemove) {
+        setExitingIds(prev => new Set(prev).add(sessionId));
+        setTimeout(() => {
+          setSessions(current => current.filter(s => s.id !== sessionId));
+          setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.delete(sessionId);
+            return next;
+          });
+          setExitingIds(prev => {
+            const next = new Set(prev);
+            next.delete(sessionId);
+            return next;
+          });
+          setTotal(prev => prev - 1);
+        }, 400);
+      }
     } catch (error) {
       console.error('Status update failed:', error);
       setBatchMessage({ tone: 'error', text: 'Status update failed.' });
@@ -786,23 +844,27 @@ export function SessionList() {
       ) : (
         <div className="space-y-2">
           {sessions.map(session => (
-            <SessionCard
+            <div
               key={session.id}
-              session={session}
-              selectionMode={selectionMode}
-              selected={selectedIds.has(session.id)}
-              onToggleSelect={toggleSessionSelection}
-              onApplyTitle={applyTitle}
-              onRename={renameSession}
-              onSummarize={summarizeSession}
-              onStatusChange={updateStatus}
-              onPinnedChange={updatePinned}
-              applyingTitle={applyingTitleId === session.id}
-              renaming={renamingId === session.id}
-              summarizing={summarizingId === session.id}
-              summaryStatus={summaryProgressById[session.id]?.status}
-              summaryEngine={summaryProgressById[session.id]?.engineLabel}
-            />
+              className={`session-card-wrap${exitingIds.has(session.id) ? ' session-card-exit' : ''}`}
+            >
+              <SessionCard
+                session={session}
+                selectionMode={selectionMode}
+                selected={selectedIds.has(session.id)}
+                onToggleSelect={toggleSessionSelection}
+                onApplyTitle={applyTitle}
+                onRename={renameSession}
+                onSummarize={summarizeSession}
+                onStatusChange={updateStatus}
+                onPinnedChange={updatePinned}
+                applyingTitle={applyingTitleId === session.id}
+                renaming={renamingId === session.id}
+                summarizing={summarizingId === session.id}
+                summaryStatus={summaryProgressById[session.id]?.status}
+                summaryEngine={summaryProgressById[session.id]?.engineLabel}
+              />
+            </div>
           ))}
         </div>
       )}

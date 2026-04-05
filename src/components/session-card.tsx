@@ -300,7 +300,7 @@ export function SessionCard({
             </Link>
           )}
         </div>
-        <div className="relative shrink-0">
+        <div className={`relative shrink-0${menuOpen ? ' z-50' : ''}`}>
           <button
             onClick={event => {
               event.preventDefault();
