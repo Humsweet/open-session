@@ -237,7 +237,19 @@ export function SessionDetailView({ id }: { id: string }) {
 
   const copyResume = () => {
     if (!session) return;
-    navigator.clipboard.writeText(getResumeCommand(session));
+    const text = getResumeCommand(session);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
