@@ -29,7 +29,7 @@ function getResumeCommand(session: SessionDetailType): string {
     case 'copilot-cli':
       return `# Copilot CLI session: ${session.id.replace('copilot-', '')}`;
     case 'codex-cli':
-      return `codex --resume ${session.id.replace('codex-', '')}`;
+      return `codex resume ${session.id.replace('codex-', '')}`;
     case 'gemini-cli':
       return `# Gemini CLI session: ${session.id.replace('gemini-', '')}`;
     default:
