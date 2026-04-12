@@ -5,7 +5,7 @@ import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { extractSummaryTitle } from '@/lib/summarizer/summary-format';
 import { FilterBar, FilterState } from './filter-bar';
 import { SessionCard } from './session-card';
-import { RefreshCw, Inbox, CheckCircle2, Circle, Sparkles, X } from 'lucide-react';
+import { RefreshCw, Inbox, CheckCircle2, Circle, Sparkles, X, ChevronRight } from 'lucide-react';
 
 const SESSIONS_CACHE_KEY = 'open-session:cache';
 
@@ -67,6 +67,7 @@ export function SessionList() {
   const [summarizingId, setSummarizingId] = useState<string | null>(null);
   const [summaryProgressById, setSummaryProgressById] = useState<Record<string, { status: string; engineLabel: string }>>({});
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -843,29 +844,143 @@ export function SessionList() {
         </div>
       ) : (
         <div className="space-y-2">
-          {sessions.map(session => (
-            <div
-              key={session.id}
-              className={`session-card-wrap${exitingIds.has(session.id) ? ' session-card-exit' : ''}`}
-            >
-              <SessionCard
-                session={session}
-                selectionMode={selectionMode}
-                selected={selectedIds.has(session.id)}
-                onToggleSelect={toggleSessionSelection}
-                onApplyTitle={applyTitle}
-                onRename={renameSession}
-                onSummarize={summarizeSession}
-                onStatusChange={updateStatus}
-                onPinnedChange={updatePinned}
-                applyingTitle={applyingTitleId === session.id}
-                renaming={renamingId === session.id}
-                summarizing={summarizingId === session.id}
-                summaryStatus={summaryProgressById[session.id]?.status}
-                summaryEngine={summaryProgressById[session.id]?.engineLabel}
-              />
-            </div>
-          ))}
+          {(() => {
+            // Group sessions by slackChannelId when viewing slack-bot origin
+            const isSlackView = filters.origin === 'slack-bot' || filters.origin === 'all';
+            type ThreadGroup = { lead: UnifiedSession; children: UnifiedSession[] };
+            const groups: Array<{ type: 'single'; session: UnifiedSession } | { type: 'thread'; group: ThreadGroup }> = [];
+
+            if (isSlackView) {
+              const threadMap = new Map<string, ThreadGroup>();
+              const soloSessions: UnifiedSession[] = [];
+
+              for (const session of sessions) {
+                const channelId = session.slackChannelId;
+                if (!channelId) {
+                  soloSessions.push(session);
+                  continue;
+                }
+                const existing = threadMap.get(channelId);
+                if (existing) {
+                  // Earlier createdAt becomes lead
+                  if (new Date(session.createdAt) < new Date(existing.lead.createdAt)) {
+                    existing.children.push(existing.lead);
+                    existing.lead = session;
+                  } else {
+                    existing.children.push(session);
+                  }
+                } else {
+                  threadMap.set(channelId, { lead: session, children: [] });
+                }
+              }
+
+              // Sort children by createdAt ascending
+              for (const group of threadMap.values()) {
+                group.children.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+              }
+
+              // Interleave groups and solo sessions in the original order
+              const sessionOrder = new Map(sessions.map((s, i) => [s.id, i]));
+              const getOrder = (item: { type: 'single'; session: UnifiedSession } | { type: 'thread'; group: ThreadGroup }) => {
+                const s = item.type === 'single' ? item.session : item.group.lead;
+                return sessionOrder.get(s.id) ?? Infinity;
+              };
+
+              const items: typeof groups = [];
+              const usedChannels = new Set<string>();
+
+              for (const session of sessions) {
+                const channelId = session.slackChannelId;
+                if (!channelId) {
+                  items.push({ type: 'single', session });
+                } else if (!usedChannels.has(channelId)) {
+                  usedChannels.add(channelId);
+                  const group = threadMap.get(channelId)!;
+                  if (group.children.length === 0) {
+                    items.push({ type: 'single', session: group.lead });
+                  } else {
+                    items.push({ type: 'thread', group });
+                  }
+                }
+              }
+
+              groups.push(...items);
+            } else {
+              for (const session of sessions) {
+                groups.push({ type: 'single', session });
+              }
+            }
+
+            const renderCard = (session: UnifiedSession, indent = false) => (
+              <div
+                key={session.id}
+                className={`session-card-wrap${exitingIds.has(session.id) ? ' session-card-exit' : ''}`}
+                style={indent ? { marginLeft: 24, borderLeft: '2px solid var(--border-subtle)', paddingLeft: 12 } : undefined}
+              >
+                <SessionCard
+                  session={session}
+                  selectionMode={selectionMode}
+                  selected={selectedIds.has(session.id)}
+                  onToggleSelect={toggleSessionSelection}
+                  onApplyTitle={applyTitle}
+                  onRename={renameSession}
+                  onSummarize={summarizeSession}
+                  onStatusChange={updateStatus}
+                  onPinnedChange={updatePinned}
+                  applyingTitle={applyingTitleId === session.id}
+                  renaming={renamingId === session.id}
+                  summarizing={summarizingId === session.id}
+                  summaryStatus={summaryProgressById[session.id]?.status}
+                  summaryEngine={summaryProgressById[session.id]?.engineLabel}
+                />
+              </div>
+            );
+
+            return groups.map((item, i) => {
+              if (item.type === 'single') {
+                return renderCard(item.session);
+              }
+
+              const { lead, children } = item.group;
+              const threadId = lead.slackChannelId!;
+              const isExpanded = expandedThreads.has(threadId);
+
+              return (
+                <div key={`thread-${threadId}`}>
+                  {renderCard(lead)}
+                  <button
+                    onClick={() => setExpandedThreads(prev => {
+                      const next = new Set(prev);
+                      if (next.has(threadId)) next.delete(threadId);
+                      else next.add(threadId);
+                      return next;
+                    })}
+                    className="flex items-center gap-1.5 ml-6 mt-1 mb-1 px-2 py-1 rounded text-[11px] font-medium transition-colors"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      backgroundColor: isExpanded ? 'var(--bg-hover)' : 'transparent',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+                  >
+                    <ChevronRight
+                      size={12}
+                      style={{
+                        transform: isExpanded ? 'rotate(90deg)' : 'none',
+                        transition: 'transform 0.15s ease',
+                      }}
+                    />
+                    {children.length} follow-up session{children.length !== 1 ? 's' : ''} in thread
+                  </button>
+                  {isExpanded && (
+                    <div className="space-y-2">
+                      {children.map(child => renderCard(child, true))}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
     </div>

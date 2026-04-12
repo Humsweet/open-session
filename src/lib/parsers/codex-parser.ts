@@ -29,6 +29,7 @@ export class CodexParser implements SessionParser {
         let lastUserMessage = '';
         let messageCount = 0;
         let title = '';
+        let originator = '';
 
         for (const line of lines) {
           try {
@@ -38,6 +39,7 @@ export class CodexParser implements SessionParser {
               sessionId = obj.payload?.id || path.basename(filePath, '.jsonl');
               cwd = obj.payload?.cwd || '';
               createdAt = obj.timestamp || '';
+              originator = obj.payload?.originator || '';
             }
 
             if (obj.type === 'response_item' && obj.payload?.role === 'user') {
@@ -81,6 +83,7 @@ export class CodexParser implements SessionParser {
           tool: 'codex-cli',
           status: 'open',
           origin: 'local',
+          originator: originator || undefined,
           title,
           cwd: cwd.replace(/^\\\\\?\\/, ''),
           createdAt,

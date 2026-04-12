@@ -92,7 +92,7 @@ function parseBlocks(markdown: string): Block[] {
       continue;
     }
 
-    if (/^[-*+]\s+/.test(line)) {
+    if (/^[-*+]\s+/.test(line.trim())) {
       const items: string[] = [];
       while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
         items.push(lines[i].trim().replace(/^[-*+]\s+/, ''));
@@ -102,7 +102,7 @@ function parseBlocks(markdown: string): Block[] {
       continue;
     }
 
-    if (/^\d+\.\s+/.test(line)) {
+    if (/^\d+\.\s+/.test(line.trim())) {
       const items: string[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
         items.push(lines[i].trim().replace(/^\d+\.\s+/, ''));

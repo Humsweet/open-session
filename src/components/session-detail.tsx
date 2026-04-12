@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { SessionDetail as SessionDetailType } from '@/lib/parsers/types';
+import Link from 'next/link';
+import { SessionDetail as SessionDetailType, UnifiedSession } from '@/lib/parsers/types';
 import { OriginBadge, PinBadge, ToolBadge, StatusBadge } from './tool-icon';
 import { SimpleMarkdown } from './simple-markdown';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
@@ -65,6 +66,7 @@ export function SessionDetailView({ id }: { id: string }) {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [expandedIndices, setExpandedIndices] = useState<Set<number>>(new Set());
   const [rawJsonContent, setRawJsonContent] = useState<string | null>(null);
+  const [threadSiblings, setThreadSiblings] = useState<UnifiedSession[]>([]);
 
   const summaryTitle = extractSummaryTitle(session?.summary);
   const summaryBody = stripSummaryTitle(session?.summary);
@@ -79,6 +81,23 @@ export function SessionDetailView({ id }: { id: string }) {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Fetch thread siblings when session has a slackChannelId
+  useEffect(() => {
+    if (!session?.slackChannelId) {
+      setThreadSiblings([]);
+      return;
+    }
+    fetch(`/api/sessions?origin=slack-bot`)
+      .then(r => r.json())
+      .then(data => {
+        const siblings = (data.sessions || [])
+          .filter((s: UnifiedSession) => s.slackChannelId === session.slackChannelId && s.id !== session.id)
+          .sort((a: UnifiedSession, b: UnifiedSession) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        setThreadSiblings(siblings);
+      })
+      .catch(() => setThreadSiblings([]));
+  }, [session?.slackChannelId, session?.id]);
 
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
   const hasRichBlocks = messages.some(message => message.blockType !== undefined);
@@ -333,6 +352,40 @@ export function SessionDetailView({ id }: { id: string }) {
         Back to sessions
       </button>
 
+      {threadSiblings.length > 0 && (
+        <div
+          className="mb-4 rounded-lg border px-3 py-2.5"
+          style={{ backgroundColor: 'var(--slack-subtle, var(--bg-tertiary))', borderColor: 'var(--border-subtle)' }}
+        >
+          <p className="text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            Slack Thread · {threadSiblings.length + 1} sessions
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {[...(session ? [session] : []), ...threadSiblings]
+              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+              .map((s, i) => {
+                const isCurrent = s.id === session?.id;
+                return (
+                  <Link
+                    key={s.id}
+                    href={`/sessions/${s.id}`}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors"
+                    style={{
+                      backgroundColor: isCurrent ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
+                      color: isCurrent ? 'var(--accent)' : 'var(--text-secondary)',
+                      border: isCurrent ? '1px solid var(--accent)' : '1px solid var(--border-subtle)',
+                      pointerEvents: isCurrent ? 'none' : 'auto',
+                    }}
+                  >
+                    {i === 0 ? 'Original' : `Follow-up #${i}`}
+                    {!isCurrent && <ChevronRight size={10} />}
+                  </Link>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-4 mb-5">
         <div className="min-w-0 flex-1">
           {isRenaming ? (
@@ -521,46 +574,52 @@ export function SessionDetailView({ id }: { id: string }) {
         </div>
       </div>
 
-      {session.origin === 'slack-bot' && (
-        <div
-          className="mb-5 rounded-lg border p-4"
-          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}
-        >
-          <h2 className="text-[13px] font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-            Source
-          </h2>
-          <div className="grid gap-2 text-[12px]">
-            <div className="flex items-start justify-between gap-3">
-              <span style={{ color: 'var(--text-tertiary)' }}>Origin</span>
-              <span style={{ color: 'var(--text-primary)' }}>Slack Bot</span>
-            </div>
-            {session.agentSource && (
-              <div className="flex items-start justify-between gap-3">
-                <span style={{ color: 'var(--text-tertiary)' }}>Agent source</span>
-                <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
-                  {session.agentSource}
-                </code>
-              </div>
-            )}
-            {session.slackThreadTs && (
-              <div className="flex items-start justify-between gap-3">
-                <span style={{ color: 'var(--text-tertiary)' }}>Slack thread</span>
-                <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
-                  {session.slackThreadTs}
-                </code>
-              </div>
-            )}
-            {session.slackUserId && (
-              <div className="flex items-start justify-between gap-3">
-                <span style={{ color: 'var(--text-tertiary)' }}>Slack user</span>
-                <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
-                  {session.slackUserId}
-                </code>
-              </div>
-            )}
+      <div
+        className="mb-5 rounded-lg border p-4"
+        style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}
+      >
+        <h2 className="text-[13px] font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+          Source
+        </h2>
+        <div className="grid gap-2 text-[12px]">
+          <div className="flex items-start justify-between gap-3">
+            <span style={{ color: 'var(--text-tertiary)' }}>Session ID</span>
+            <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+              {session.id}
+            </code>
           </div>
+          <div className="flex items-start justify-between gap-3">
+            <span style={{ color: 'var(--text-tertiary)' }}>Origin</span>
+            <span style={{ color: 'var(--text-primary)' }}>
+              {session.origin === 'slack-bot' ? 'Slack Bot' : 'Local'}
+            </span>
+          </div>
+          {session.agentSource && (
+            <div className="flex items-start justify-between gap-3">
+              <span style={{ color: 'var(--text-tertiary)' }}>Agent source</span>
+              <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+                {session.agentSource}
+              </code>
+            </div>
+          )}
+          {session.slackThreadTs && (
+            <div className="flex items-start justify-between gap-3">
+              <span style={{ color: 'var(--text-tertiary)' }}>Slack thread</span>
+              <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+                {session.slackThreadTs}
+              </code>
+            </div>
+          )}
+          {session.slackUserId && (
+            <div className="flex items-start justify-between gap-3">
+              <span style={{ color: 'var(--text-tertiary)' }}>Slack user</span>
+              <code className="text-right break-all" style={{ color: 'var(--text-primary)' }}>
+                {session.slackUserId}
+              </code>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {hasRichBlocks && <StatsBar messages={messages} />}
 

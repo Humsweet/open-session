@@ -33,10 +33,19 @@ For Claude Code sessions, every step of the agent's work is fully visible:
 - **Parallel Call Detection** — Automatically labeled when the agent runs multiple tools simultaneously.
 - **Raw JSON Inspector** — Click `{ }` on any block to see the original JSONL entry.
 
+### Slack Bot Origin Tracking
+
+If you use [agent-remote](https://github.com/Humsweet/agent-remote) to trigger AI sessions via Slack, Open Session automatically identifies those sessions and separates them from local ones:
+
+- **Origin Badge** — Each session shows whether it was started locally or via Slack bot.
+- **Origin Filter** — A "Slack Bot" tab lets you view only Slack-triggered sessions.
+- **Thread Grouping** — Sessions from the same Slack thread are grouped together in the list view, with an expandable "N follow-up session(s) in thread" section under the lead session.
+- **Thread Navigation** — In the detail view, a navigation bar shows all sessions in the same Slack thread as pill-style links ("Original", "Follow-up #1", "Follow-up #2", …), with the current session highlighted.
+
 ### Session Management
 
 - **Status** — Mark sessions as `Open`, `Closed`, or `Dropped` from the list or detail view.
-- **Search & Filter** — Filter by tool, status, or free-text search.
+- **Search & Filter** — Filter by tool, status, origin, or free-text search.
 - **Sort** — By last updated or creation time.
 - **AI Summary** — Generate session summaries using your local Claude Code, Codex, or Gemini CLI.
 - **Resume** — One-click copy of the resume command to pick up where you left off.

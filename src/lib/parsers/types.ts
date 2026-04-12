@@ -18,8 +18,10 @@ export interface UnifiedSession {
   pinned?: boolean;
   rawPath: string;
   origin: SessionOrigin;
+  originator?: string;
   agentSource?: string;
   slackThreadTs?: string;
+  slackChannelId?: string;
   slackUserId?: string;
 }
 
