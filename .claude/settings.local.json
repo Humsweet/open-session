@@ -2,7 +2,29 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(sqlite3 ~/.agent-remote/sessions.db \"SELECT session_id, channel_id, user_id FROM sessions WHERE session_id IS NOT NULL AND session_id != 'pending' LIMIT 20\")",
+      "Bash(sqlite3:*)",
+      "Bash(curl -s http://localhost:3000/api/sessions?origin=local)",
+      "Bash(python3 -c \" import json, sys data = json.load\\(sys.stdin\\) sessions = data if isinstance\\(data, list\\) else data.get\\('sessions', []\\) print\\(f'Total local sessions: {len\\(sessions\\)}'\\) for s in sessions[:5]: print\\(f\\\\\" id={s['id']}, tool={s['tool']}, title={s.get\\('title',''\\)[:60]}\\\\\"\\) \")",
+      "Bash(curl -s 'http://localhost:3000/api/sessions?origin=local&status=open')",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s 'http://localhost:3000/api/sessions?origin=slack-bot&status=open')",
+      "Read(//Users/hanyuyang/.codex/**)",
+      "Read(//Users/hanyuyang/**)",
+      "Bash(python3:*)",
+      "Bash(read f:*)",
+      "Bash(codex --version)",
+      "Bash(timeout 15 codex exec --json -C /tmp \"echo hello\")",
+      "Bash(tee /tmp/codex_stdout.txt)",
+      "Bash(echo \"Backfilled $\\(sqlite3 ~/.agent-remote/sessions.db 'SELECT COUNT\\(*\\) FROM session_ids'\\) rows\")",
+      "Bash(npx tsc:*)",
+      "Bash(node -e ':*)",
+      "Bash(curl -s 'http://localhost:3000/api/sessions?status=all')",
+      "Bash(curl -s 'http://localhost:3000/api/sessions?status=open')",
+      "Bash(curl -s 'http://localhost:3000/api/sessions?origin=slack-bot')",
+      "Bash(curl -s 'http://localhost:3000/api/sessions/claude-5c73e35f-f120-44dc-9716-750096dbf805')",
+      "Bash(launchctl list:*)"
     ]
   }
 }
