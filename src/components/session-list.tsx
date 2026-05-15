@@ -82,6 +82,7 @@ export function SessionList() {
       params.set('sortOrder', filters.sortOrder);
 
       const res = await fetch(`/api/sessions?${params}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
@@ -106,7 +107,7 @@ export function SessionList() {
   useEffect(() => {
     if (cacheRestored) return;
     const cached = readCache();
-    if (cached) {
+    if (cached && cached.sessions.length > 0) {
       setSessions(cached.sessions);
       setTotal(cached.total);
       setLoading(false);
