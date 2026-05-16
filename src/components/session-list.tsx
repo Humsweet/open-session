@@ -365,21 +365,25 @@ export function SessionList() {
         }
       };
 
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
 
-        let boundaryIndex = buffer.indexOf('\n\n');
-        while (boundaryIndex !== -1) {
-          const block = buffer.slice(0, boundaryIndex).trim();
-          buffer = buffer.slice(boundaryIndex + 2);
-          if (block) {
-            processEventBlock(block);
+          let boundaryIndex = buffer.indexOf('\n\n');
+          while (boundaryIndex !== -1) {
+            const block = buffer.slice(0, boundaryIndex).trim();
+            buffer = buffer.slice(boundaryIndex + 2);
+            if (block) {
+              processEventBlock(block);
+            }
+            boundaryIndex = buffer.indexOf('\n\n');
           }
-          boundaryIndex = buffer.indexOf('\n\n');
-        }
 
-        if (done) break;
+          if (done) break;
+        }
+      } finally {
+        reader.cancel();
       }
     } catch (error) {
       console.error('Summary failed:', error);
@@ -588,21 +592,25 @@ export function SessionList() {
         }
       };
 
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
 
-        let boundaryIndex = buffer.indexOf('\n\n');
-        while (boundaryIndex !== -1) {
-          const block = buffer.slice(0, boundaryIndex).trim();
-          buffer = buffer.slice(boundaryIndex + 2);
-          if (block) {
-            processEventBlock(block);
+          let boundaryIndex = buffer.indexOf('\n\n');
+          while (boundaryIndex !== -1) {
+            const block = buffer.slice(0, boundaryIndex).trim();
+            buffer = buffer.slice(boundaryIndex + 2);
+            if (block) {
+              processEventBlock(block);
+            }
+            boundaryIndex = buffer.indexOf('\n\n');
           }
-          boundaryIndex = buffer.indexOf('\n\n');
-        }
 
-        if (done) break;
+          if (done) break;
+        }
+      } finally {
+        reader.cancel();
       }
 
       await fetchSessions();

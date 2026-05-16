@@ -29,6 +29,7 @@ type AgentRemoteSessionInfo = {
 };
 
 let agentRemoteDb: Database.Database | null | undefined;
+let agentRemoteCleanupRegistered = false;
 
 function getAgentRemoteDb(): Database.Database | null {
   if (agentRemoteDb !== undefined) {
@@ -42,6 +43,14 @@ function getAgentRemoteDb(): Database.Database | null {
 
   try {
     agentRemoteDb = new Database(AGENT_REMOTE_DB_PATH, { readonly: true, fileMustExist: true });
+
+    if (!agentRemoteCleanupRegistered) {
+      agentRemoteCleanupRegistered = true;
+      const closeAgentDb = () => { if (agentRemoteDb) { agentRemoteDb.close(); agentRemoteDb = undefined; } };
+      process.once('exit', closeAgentDb);
+      process.once('SIGTERM', closeAgentDb);
+      process.once('SIGINT', closeAgentDb);
+    }
   } catch {
     agentRemoteDb = null;
   }

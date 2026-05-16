@@ -6,6 +6,7 @@ const DB_DIR = path.join(process.env.USERPROFILE || process.env.HOME || '', '.op
 const DB_PATH = path.join(DB_DIR, 'data.db');
 
 let db: Database.Database | null = null;
+let dbCleanupRegistered = false;
 
 export function getDb(): Database.Database {
   if (db) return db;
@@ -18,6 +19,15 @@ export function getDb(): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   initSchema(db);
+
+  if (!dbCleanupRegistered) {
+    dbCleanupRegistered = true;
+    const closeDb = () => { if (db) { db.close(); db = null; } };
+    process.once('exit', closeDb);
+    process.once('SIGTERM', closeDb);
+    process.once('SIGINT', closeDb);
+  }
+
   return db;
 }
 

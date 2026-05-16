@@ -184,6 +184,7 @@ export function SessionDetailView({ id }: { id: string }) {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      try {
       const processEventBlock = (block: string) => {
         const lines = block.split('\n');
         let event = 'message';
@@ -244,6 +245,9 @@ export function SessionDetailView({ id }: { id: string }) {
         }
 
         if (done) break;
+      }
+      } finally {
+        reader.cancel();
       }
     } catch (e) {
       console.error('Summary failed:', e);
