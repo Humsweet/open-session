@@ -4,7 +4,7 @@
 
 open-session 通过 **pm2** 常驻后台运行，使用生产构建（`npm start`），并已注册为 macOS launchd 服务（登录后自动启动）。
 
-访问地址：http://localhost:3000
+访问地址：http://localhost:3001
 
 ## 更新代码后的正确流程
 
