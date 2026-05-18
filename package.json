@@ -3,9 +3,9 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_ENV=development next dev --webpack",
-    "build": "NODE_ENV=production next build --webpack",
-    "start": "NODE_ENV=production next start -p 3001",
+    "dev": "cross-env NODE_ENV=development next dev --webpack",
+    "build": "cross-env NODE_ENV=production next build --webpack",
+    "start": "cross-env NODE_ENV=production next start -p 3001",
     "lint": "eslint"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
