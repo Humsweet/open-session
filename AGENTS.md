@@ -1,5 +1,7 @@
 # AGENTS.md — open-session 运维注意事项
 
+> ⚠️ 本文档描述的是 **macOS** 上的运维流程（pm2 + launchd），Windows 上不适用。
+
 ## 服务管理
 
 open-session 通过 **pm2** 常驻后台运行，使用生产构建（`npm start`），并已注册为 macOS launchd 服务（登录后自动启动）。
@@ -11,7 +13,7 @@ open-session 通过 **pm2** 常驻后台运行，使用生产构建（`npm start
 代码有任何改动后，必须按以下顺序操作，**不要直接 restart**：
 
 ```bash
-cd "/Users/hanyuyang/Github Personal/open-session"
+cd "~/Github Personal/open-session"
 npm run build
 pm2 restart open-session
 ```
