@@ -1,17 +1,13 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { spawn } from 'child_process';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn, ChildProcess } from 'child_process';
 import { SummaryEngine } from './spinner-verbs';
-
-const execAsync = promisify(exec);
 
 const SUMMARY_MODELS: Record<SummaryEngine, string> = {
   'claude-code': 'haiku',
   'copilot-cli': 'claude-haiku-4.5',
-  'codex-cli': 'gpt-5-codex-mini',
+  'codex-cli': 'gpt-5.4',
   'gemini-cli': 'gemini-2.5-flash-lite',
 };
 
@@ -25,23 +21,122 @@ interface RuntimeOptions {
   onStatus?: (status: SummaryRuntimeStatus) => void;
 }
 
-function quoteForShell(text: string): string {
-  return `'${text.replace(/'/g, `'\\''`)}'`;
+const isWindows = process.platform === 'win32';
+
+// The prompt is always delivered via stdin, never on the command line, so the
+// argv only ever contains fixed tokens (flags, model names, temp paths). This
+// sidesteps shell quoting entirely — POSIX quoting breaks cmd.exe and vice
+// versa, and cmd.exe cannot carry multi-line arguments at all.
+function spawnCli(command: string, args: string[]): ChildProcess {
+  // npm-installed CLIs (claude, gemini, codex) are .cmd shims on Windows,
+  // which spawn() can only execute through a shell. Building the command line
+  // ourselves is safe here because args are fixed tokens or temp paths.
+  if (isWindows) {
+    const commandLine = [command, ...args.map(a => (/\s/.test(a) ? `"${a}"` : a))].join(' ');
+    return spawn(commandLine, {
+      shell: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+      windowsHide: true,
+    });
+  }
+
+  return spawn(command, args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: process.env,
+    windowsHide: true,
+  });
 }
 
-function buildShellCommand(engine: Exclude<SummaryEngine, 'codex-cli'>, prompt: string): string {
-  const quotedPrompt = quoteForShell(prompt);
+// With shell:true on Windows, child.pid is cmd.exe — kill the whole tree so
+// the actual CLI process doesn't outlive a timeout.
+function killCliTree(child: ChildProcess): void {
+  if (isWindows && child.pid) {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+  } else {
+    child.kill('SIGTERM');
+  }
+}
 
+interface StdinCliInvocation {
+  command: string;
+  args: string[];
+}
+
+function buildCliInvocation(engine: Exclude<SummaryEngine, 'codex-cli'>): StdinCliInvocation {
   switch (engine) {
     case 'claude-code':
-      return `claude -p ${quotedPrompt} --output-format text --model ${SUMMARY_MODELS['claude-code']}`;
+      return {
+        command: 'claude',
+        args: ['-p', '--output-format', 'text', '--model', SUMMARY_MODELS['claude-code']],
+      };
     case 'copilot-cli':
-      return `copilot -p ${quotedPrompt} --silent --allow-all-tools --model ${SUMMARY_MODELS['copilot-cli']}`;
+      return {
+        command: 'copilot',
+        args: ['--silent', '--allow-all-tools', '--model', SUMMARY_MODELS['copilot-cli']],
+      };
     case 'gemini-cli':
-      return `gemini -p ${quotedPrompt} -m ${SUMMARY_MODELS['gemini-cli']} -o text`;
+      return {
+        command: 'gemini',
+        args: ['-m', SUMMARY_MODELS['gemini-cli'], '-o', 'text'],
+      };
     default:
       throw new Error(`Unknown engine: ${engine}`);
   }
+}
+
+function runCliWithStdin(
+  command: string,
+  args: string[],
+  prompt: string,
+  timeoutMs: number
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawnCli(command, args);
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      killCliTree(child);
+      reject(new Error(`Timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve({ stdout, stderr });
+    };
+
+    child.stdout?.on('data', chunk => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr?.on('data', chunk => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', error => {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    });
+
+    child.on('close', code => {
+      if (code === 0) {
+        finish();
+        return;
+      }
+      finish(new Error(stderr.trim() || `${command} exited with code ${code ?? 'unknown'}`));
+    });
+
+    // EPIPE if the process exits before consuming stdin — 'close' reports the real error.
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(prompt);
+  });
 }
 
 function mapCodexEventToStatus(event: { type?: string; item?: { type?: string } }): string | null {
@@ -65,25 +160,19 @@ async function runCodex(prompt: string, options: RuntimeOptions): Promise<string
 
   try {
     return await new Promise<string>((resolve, reject) => {
-      const child = spawn(
-        'codex',
-        [
-          'exec',
-          '--skip-git-repo-check',
-          '--json',
-          '--color',
-          'never',
-          '-m',
-          SUMMARY_MODELS['codex-cli'],
-          '-o',
-          outputPath,
-          prompt,
-        ],
-        {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: process.env,
-        }
-      );
+      // '-' makes codex exec read the prompt from stdin.
+      const child = spawnCli('codex', [
+        'exec',
+        '--skip-git-repo-check',
+        '--json',
+        '--color',
+        'never',
+        '-m',
+        SUMMARY_MODELS['codex-cli'],
+        '-o',
+        outputPath,
+        '-',
+      ]);
 
       let stdoutBuffer = '';
       let stderrBuffer = '';
@@ -136,12 +225,12 @@ async function runCodex(prompt: string, options: RuntimeOptions): Promise<string
         }
       };
 
-      child.stdout.on('data', chunk => {
+      child.stdout?.on('data', chunk => {
         stdoutBuffer += chunk.toString();
         consumeStdout();
       });
 
-      child.stderr.on('data', chunk => {
+      child.stderr?.on('data', chunk => {
         stderrBuffer += chunk.toString();
       });
 
@@ -161,9 +250,12 @@ async function runCodex(prompt: string, options: RuntimeOptions): Promise<string
         finish(new Error(message));
       });
 
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(prompt);
+
       timeout = options.timeoutMs
         ? setTimeout(() => {
-            child.kill('SIGTERM');
+            killCliTree(child);
             finish(new Error(`Timed out after ${options.timeoutMs}ms`));
           }, options.timeoutMs)
         : null;
@@ -180,11 +272,8 @@ async function runShellEngine(
 ): Promise<string> {
   options.onStatus?.({ source: 'cli', message: 'Working' });
 
-  const command = buildShellCommand(engine, prompt);
-  const { stdout, stderr } = await execAsync(command, {
-    timeout: options.timeoutMs ?? 120000,
-    maxBuffer: 1024 * 1024,
-  });
+  const { command, args } = buildCliInvocation(engine);
+  const { stdout, stderr } = await runCliWithStdin(command, args, prompt, options.timeoutMs ?? 120000);
 
   if (stderr && !stdout) {
     throw new Error(stderr);
