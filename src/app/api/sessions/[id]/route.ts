@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionDetail } from '@/lib/parsers';
+import { getSessionDetail, getSessionLite } from '@/lib/parsers';
 import { getDb } from '@/lib/db/client';
 import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
@@ -104,9 +104,11 @@ export async function PATCH(
     const pinnedAt = hasPinned && pinned ? new Date().toISOString() : null;
 
     const db = getDb();
-    const detail = await getSessionDetail(id);
+    // Metadata-only lookup: the helper-session check needs first/last user
+    // message, not the parsed transcript
+    const lite = await getSessionLite(id);
     const forcedStatus =
-      detail && isSummaryHelperSession(detail) ? 'closed' : status;
+      lite && isSummaryHelperSession(lite) ? 'closed' : status;
 
     db.prepare(`
       INSERT INTO session_state (session_id, status, status_updated_at, custom_title, summary_title_applied, pinned, pinned_at, updated_at)

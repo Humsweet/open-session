@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
+import { getCachedSession, setCachedSession } from './scan-cache';
 
 function getGeminiConversationsDir(): string {
   const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -65,6 +66,13 @@ export class GeminiParser implements SessionParser {
       for (const file of chatFiles) {
         const filePath = path.join(chatsDir, file);
         try {
+          const fileStat = fs.statSync(filePath);
+          const cached = getCachedSession(filePath, fileStat);
+          if (cached) {
+            sessions.push(cached);
+            continue;
+          }
+
           const content = fs.readFileSync(filePath, 'utf-8');
           const data: GeminiSessionJson = JSON.parse(content);
 
@@ -79,7 +87,7 @@ export class GeminiParser implements SessionParser {
 
           const title = firstUserText.slice(0, 80) || `Gemini Session ${data.sessionId.slice(0, 8)}`;
 
-          sessions.push({
+          const session: UnifiedSession = {
             id: `gemini-${data.sessionId}`,
             tool: 'gemini-cli',
             status: 'open',
@@ -92,7 +100,9 @@ export class GeminiParser implements SessionParser {
             firstUserMessage: firstUserText.slice(0, 500),
             lastUserMessage: lastUserText.slice(0, 500),
             rawPath: filePath,
-          });
+          };
+          setCachedSession(filePath, fileStat, session);
+          sessions.push({ ...session });
         } catch { /* skip broken files */ }
       }
     }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SessionOrigin, SessionStatus, ToolType } from '@/lib/parsers/types';
-import { Search, ArrowUpDown, SlidersHorizontal } from 'lucide-react';
+import { Search, ArrowUpDown, SlidersHorizontal, Loader2, X } from 'lucide-react';
 
 const tools: { value: ToolType | 'all'; label: string }[] = [
   { value: 'all', label: 'All tools' },
@@ -47,6 +47,8 @@ export interface FilterState {
 
 interface FilterBarProps {
   onFilterChange: (filters: FilterState) => void;
+  /** True while the session list is fetching — drives the in-input search spinner */
+  busy?: boolean;
 }
 
 function getSourceButtonStyle(activeOrigin: SessionOrigin | 'all', value: SessionOrigin | 'all') {
@@ -93,7 +95,7 @@ function getOriginLabel(origin: SessionOrigin | 'all') {
   return origins.find(option => option.value === origin)?.label || 'All';
 }
 
-export function FilterBar({ onFilterChange }: FilterBarProps) {
+export function FilterBar({ onFilterChange, busy = false }: FilterBarProps) {
   const [activeTool, setActiveTool] = useState<ToolType | 'all'>('all');
   const [activeStatus, setActiveStatus] = useState<SessionStatus | 'all'>('open');
   const [activeOrigin, setActiveOrigin] = useState<SessionOrigin | 'all'>('local');
@@ -102,6 +104,13 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
   const [activeSort, setActiveSort] = useState('updatedAt-desc');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
 
   const applyFilters = (
     next: Partial<{
@@ -113,6 +122,11 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
       sort: string;
     }>
   ) => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
     const tool = next.tool ?? activeTool;
     const status = next.status ?? activeStatus;
     const origin = next.origin ?? activeOrigin;
@@ -147,12 +161,21 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
   ].filter(Boolean).length;
 
   const querySummary = useMemo(() => {
+    if (search.trim()) {
+      const parts = [
+        busy ? `Searching "${search.trim()}"...` : `Search: "${search.trim()}"`,
+        'All statuses & sources',
+        currentSortLabel,
+      ];
+      if (activePinned === 'only') parts.push('Pinned only');
+      if (activeTool !== 'all') parts.push(getToolLabel(activeTool));
+      return parts.join(' · ');
+    }
     const parts = [getStatusLabel(activeStatus), getOriginLabel(activeOrigin), currentSortLabel];
     if (activePinned === 'only') parts.push('Pinned only');
     if (activeTool !== 'all') parts.push(getToolLabel(activeTool));
-    if (search.trim()) parts.push(`Search: "${search.trim()}"`);
     return parts.join(' · ');
-  }, [activeOrigin, activePinned, activeStatus, activeTool, currentSortLabel, search]);
+  }, [activeOrigin, activePinned, activeStatus, activeTool, busy, currentSortLabel, search]);
 
   return (
     <div className="mb-4 space-y-3">
@@ -161,10 +184,22 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-tertiary)' }} />
           <input
             type="text"
-            placeholder="Search sessions..."
+            placeholder="Search sessions... (full text, space-separated keywords)"
             value={search}
-            onChange={event => applyFilters({ search: event.target.value })}
-            className="w-full pl-8 pr-3 py-2 rounded-md text-[13px] border outline-none transition-colors"
+            onChange={event => {
+              const value = event.target.value;
+              setSearch(value);
+              if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current = setTimeout(() => applyFilters({ search: value }), 300);
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                applyFilters({ search });
+              } else if (event.key === 'Escape' && search) {
+                applyFilters({ search: '' });
+              }
+            }}
+            className="w-full pl-8 pr-8 py-2 rounded-md text-[13px] border outline-none transition-colors"
             style={{
               backgroundColor: 'var(--bg-tertiary)',
               borderColor: 'var(--border-subtle)',
@@ -177,9 +212,29 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
               event.currentTarget.style.borderColor = 'var(--border-subtle)';
             }}
           />
+          {search && busy ? (
+            <Loader2
+              size={14}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin"
+              style={{ color: 'var(--accent)' }}
+            />
+          ) : search ? (
+            <button
+              onClick={() => applyFilters({ search: '' })}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors"
+              style={{ color: 'var(--text-tertiary)' }}
+              title="Clear search (Esc)"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
         </div>
 
-        <div className="flex items-center gap-1 p-1 rounded-lg" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+        <div
+          className="flex items-center gap-1 p-1 rounded-lg transition-opacity"
+          style={{ backgroundColor: 'var(--bg-tertiary)', opacity: search.trim() ? 0.45 : 1 }}
+          title={search.trim() ? 'Ignored while searching — search covers all statuses' : undefined}
+        >
           {primaryStatuses.map(status => (
             <button
               key={status.value}
@@ -195,7 +250,11 @@ export function FilterBar({ onFilterChange }: FilterBarProps) {
           ))}
         </div>
 
-        <div className="flex items-center gap-1 p-1 rounded-lg" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+        <div
+          className="flex items-center gap-1 p-1 rounded-lg transition-opacity"
+          style={{ backgroundColor: 'var(--bg-tertiary)', opacity: search.trim() ? 0.45 : 1 }}
+          title={search.trim() ? 'Ignored while searching — search covers all sources' : undefined}
+        >
           {origins.map(origin => (
             <button
               key={origin.value}

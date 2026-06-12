@@ -18,6 +18,8 @@ export interface UnifiedSession {
   pinned?: boolean;
   rawPath: string;
   origin: SessionOrigin;
+  /** Where the active search query matched — only set on search API responses */
+  matchedIn?: 'title' | 'summary' | 'message' | 'path' | 'transcript';
   originator?: string;
   agentSource?: string;
   slackThreadTs?: string;

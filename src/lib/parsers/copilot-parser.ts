@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
+import { getCachedSession, setCachedSession } from './scan-cache';
 
 function getCopilotSessionDir(): string {
   const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -21,6 +22,13 @@ export class CopilotParser implements SessionParser {
       if (!fs.existsSync(eventsPath)) continue;
 
       try {
+        const fileStat = fs.statSync(eventsPath);
+        const cached = getCachedSession(eventsPath, fileStat);
+        if (cached) {
+          sessions.push(cached);
+          continue;
+        }
+
         const content = fs.readFileSync(eventsPath, 'utf-8');
         const lines = content.split('\n').filter(l => l.trim());
         if (lines.length === 0) continue;
@@ -55,14 +63,13 @@ export class CopilotParser implements SessionParser {
         }
 
         if (!createdAt) {
-          const stat = fs.statSync(eventsPath);
-          createdAt = stat.birthtime.toISOString();
+          createdAt = fileStat.birthtime.toISOString();
         }
         if (!updatedAt) updatedAt = createdAt;
 
         const title = firstUserMessage.slice(0, 80) || `Copilot Session ${sessionId.slice(0, 8)}`;
 
-        sessions.push({
+        const session: UnifiedSession = {
           id: `copilot-${sessionId}`,
           tool: 'copilot-cli',
           status: 'open',
@@ -75,7 +82,9 @@ export class CopilotParser implements SessionParser {
           firstUserMessage,
           lastUserMessage,
           rawPath: eventsPath,
-        });
+        };
+        setCachedSession(eventsPath, fileStat, session);
+        sessions.push({ ...session });
       } catch { /* skip */ }
     }
 

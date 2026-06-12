@@ -1,40 +1,49 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
+import { getCachedSession, setCachedSession } from './scan-cache';
 
 function getClaudeProjectsDir(): string {
   const home = process.env.USERPROFILE || process.env.HOME || '';
   return path.join(home, '.claude', 'projects');
 }
 
-function extractFirstUserMessage(lines: string[]): { content: string; timestamp?: string } | null {
-  for (const line of lines) {
-    try {
-      const obj = JSON.parse(line);
-      if (obj.message?.role === 'user' && obj.type === 'user') {
-        const content = typeof obj.message.content === 'string'
-          ? obj.message.content
-          : JSON.stringify(obj.message.content);
-        return { content: content.slice(0, 500), timestamp: obj.timestamp };
-      }
-    } catch { /* skip */ }
+function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: { type?: string }) => b.type === 'text')
+      .map((b: { text?: string }) => b.text || '')
+      .join(' ');
   }
-  return null;
+  return '';
 }
 
-function extractLastUserMessage(lines: string[]): { content: string; timestamp?: string } | null {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const obj = JSON.parse(lines[i]);
-      if (obj.message?.role === 'user' && obj.type === 'user') {
-        const content = typeof obj.message.content === 'string'
-          ? obj.message.content
-          : JSON.stringify(obj.message.content);
-        return { content: content.slice(0, 500), timestamp: obj.timestamp };
-      }
-    } catch { /* skip */ }
-  }
-  return null;
+/** Drop harness-injected wrappers so titles/snippets show what the user actually typed */
+function cleanMessageText(text: string): string {
+  return text
+    .replace(/<ide_opened_file>[\s\S]*?<\/ide_opened_file>/g, '')
+    .replace(/<ide_selection>[\s\S]*?<\/ide_selection>/g, '')
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+    .trim();
+}
+
+interface ParsedEntry {
+  message?: { role?: string; content?: unknown };
+  type?: string;
+  isMeta?: boolean;
+  timestamp?: string;
+  cwd?: string;
+  slug?: string;
+}
+
+function extractUserMessage(obj: ParsedEntry): { content: string; timestamp?: string } | null {
+  if (obj.message?.role !== 'user' || obj.type !== 'user' || obj.isMeta) return null;
+  const raw = extractMessageText(obj.message.content);
+  if (raw.includes('<command-name>') || raw.includes('<local-command')) return null;
+  const text = cleanMessageText(raw);
+  if (!text) return null;
+  return { content: text.slice(0, 500), timestamp: obj.timestamp };
 }
 
 function parseMessages(lines: string[]): SessionMessage[] {
@@ -146,44 +155,53 @@ export class ClaudeParser implements SessionParser {
       for (const file of jsonlFiles) {
         const filePath = path.join(folderPath, file);
         try {
+          const stat = fs.statSync(filePath);
+          const cached = getCachedSession(filePath, stat);
+          if (cached) {
+            sessions.push(cached);
+            continue;
+          }
+
           const content = fs.readFileSync(filePath, 'utf-8');
           const lines = content.split('\n').filter(l => l.trim());
           if (lines.length === 0) continue;
 
           const sessionId = path.basename(file, '.jsonl');
 
-          // Extract metadata from first message-like line
+          // Single pass: metadata, message count, and first/last user message
           let cwd = '';
-          let createdAt = '';
-          let updatedAt = '';
           let slug = '';
+          let messageCount = 0;
+          let firstMsg: { content: string; timestamp?: string } | null = null;
+          let lastMsg: { content: string; timestamp?: string } | null = null;
+
           for (const line of lines) {
+            let obj: ParsedEntry;
             try {
-              const obj = JSON.parse(line);
-              if (obj.cwd && !cwd) cwd = obj.cwd;
-              if (obj.slug && !slug) slug = obj.slug;
-              break;
-            } catch { /* skip */ }
+              obj = JSON.parse(line);
+            } catch { continue; }
+
+            if (obj.cwd && !cwd) cwd = obj.cwd;
+            if (obj.slug && !slug) slug = obj.slug;
+
+            const role = obj.message?.role;
+            if (role === 'user' || role === 'assistant') messageCount++;
+
+            const msg = extractUserMessage(obj);
+            if (msg) {
+              if (!firstMsg) firstMsg = msg;
+              lastMsg = msg;
+            }
           }
 
-          const firstMsg = extractFirstUserMessage(lines);
-          const lastMsg = extractLastUserMessage(lines);
-          const messageCount = lines.filter(l => {
-            try {
-              const o = JSON.parse(l);
-              return o.message?.role === 'user' || o.message?.role === 'assistant';
-            } catch { return false; }
-          }).length;
-
-          const stat = fs.statSync(filePath);
-          createdAt = firstMsg?.timestamp || stat.birthtime.toISOString();
-          updatedAt = lastMsg?.timestamp || stat.mtime.toISOString();
+          const createdAt = firstMsg?.timestamp || stat.birthtime.toISOString();
+          const updatedAt = lastMsg?.timestamp || stat.mtime.toISOString();
 
           const title = slug
             ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
             : (firstMsg?.content.slice(0, 80) || sessionId);
 
-          sessions.push({
+          const session: UnifiedSession = {
             id: `claude-${sessionId}`,
             tool: 'claude-code',
             status: 'open',
@@ -196,7 +214,9 @@ export class ClaudeParser implements SessionParser {
             firstUserMessage: firstMsg?.content || '',
             lastUserMessage: lastMsg?.content || '',
             rawPath: filePath,
-          });
+          };
+          setCachedSession(filePath, stat, session);
+          sessions.push({ ...session });
         } catch { /* skip broken files */ }
       }
     }

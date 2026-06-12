@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { extractSummaryTitle } from '@/lib/summarizer/summary-format';
 import { FilterBar, FilterState } from './filter-bar';
@@ -69,25 +69,32 @@ export function SessionList() {
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
 
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
   const fetchSessions = useCallback(async () => {
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      const searching = Boolean(filters.search);
       if (filters.tool !== 'all') params.set('tool', filters.tool);
-      if (filters.status !== 'all') params.set('status', filters.status);
-      if (filters.origin !== 'all') params.set('origin', filters.origin);
+      // Search is global: skip status/origin so closed or non-local sessions stay findable
+      if (!searching && filters.status !== 'all') params.set('status', filters.status);
+      if (!searching && filters.origin !== 'all') params.set('origin', filters.origin);
       if (filters.pinned !== 'all') params.set('pinned', filters.pinned);
       if (filters.search) params.set('search', filters.search);
       params.set('sortBy', filters.sortBy);
       params.set('sortOrder', filters.sortOrder);
 
-      const res = await fetch(`/api/sessions?${params}`);
+      const res = await fetch(`/api/sessions?${params}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
       setTotal(data.total || 0);
-      writeCache(nextSessions, data.total || 0);
+      if (!searching) writeCache(nextSessions, data.total || 0);
       setSelectedIds(prev => {
         const visibleIds = new Set(nextSessions.map((session: UnifiedSession) => session.id));
         const nextSelected = new Set<string>();
@@ -97,9 +104,11 @@ export function SessionList() {
         return nextSelected;
       });
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       console.error('Failed to fetch sessions:', e);
     } finally {
-      setLoading(false);
+      // A newer fetch may already be in flight; only it may clear the spinner
+      if (fetchAbortRef.current === controller) setLoading(false);
     }
   }, [filters]);
 
@@ -211,6 +220,11 @@ export function SessionList() {
   const updateStatus = async (sessionId: string, status: SessionStatus) => {
     setBatchMessage(null);
 
+    // Optimistic: update UI first, resync from server on failure
+    setSessions(current =>
+      current.map(session => (session.id === sessionId ? { ...session, status } : session))
+    );
+
     try {
       const response = await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
@@ -221,11 +235,6 @@ export function SessionList() {
       if (!response.ok) {
         throw new Error('Status update failed');
       }
-
-      // Update status in local state immediately
-      setSessions(current =>
-        current.map(session => (session.id === sessionId ? { ...session, status } : session))
-      );
 
       // Animate card out if it should no longer be visible under current filter
       const shouldRemove = filters.status !== 'all' && status !== filters.status;
@@ -249,11 +258,28 @@ export function SessionList() {
     } catch (error) {
       console.error('Status update failed:', error);
       setBatchMessage({ tone: 'error', text: 'Status update failed.' });
+      fetchSessions();
     }
   };
 
   const updatePinned = async (sessionId: string, pinned: boolean) => {
     setBatchMessage(null);
+
+    // Optimistic: re-sort locally first, resync from server on failure
+    setSessions(current =>
+      [...current]
+        .map(session => (session.id === sessionId ? { ...session, pinned } : session))
+        .filter(session => filters.pinned !== 'only' || Boolean(session.pinned))
+        .sort((a, b) => {
+          const pinnedDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+          if (pinnedDiff !== 0) return pinnedDiff;
+
+          const field = filters.sortBy;
+          const ta = new Date(a[field] || a.updatedAt).getTime();
+          const tb = new Date(b[field] || b.updatedAt).getTime();
+          return filters.sortOrder === 'asc' ? ta - tb : tb - ta;
+        })
+    );
 
     try {
       const response = await fetch(`/api/sessions/${sessionId}`, {
@@ -265,24 +291,10 @@ export function SessionList() {
       if (!response.ok) {
         throw new Error('Pin update failed');
       }
-
-      setSessions(current =>
-        [...current]
-          .map(session => (session.id === sessionId ? { ...session, pinned } : session))
-          .filter(session => filters.pinned !== 'only' || Boolean(session.pinned))
-          .sort((a, b) => {
-            const pinnedDiff = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
-            if (pinnedDiff !== 0) return pinnedDiff;
-
-            const field = filters.sortBy;
-            const ta = new Date(a[field] || a.updatedAt).getTime();
-            const tb = new Date(b[field] || b.updatedAt).getTime();
-            return filters.sortOrder === 'asc' ? ta - tb : tb - ta;
-          })
-      );
     } catch (error) {
       console.error('Pin update failed:', error);
       setBatchMessage({ tone: 'error', text: 'Pin update failed.' });
+      fetchSessions();
     }
   };
 
@@ -691,7 +703,11 @@ export function SessionList() {
         <div>
           <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Sessions</h1>
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            {total} session{total !== 1 ? 's' : ''} across all tools
+            {filters.search
+              ? loading
+                ? `Searching for "${filters.search}"...`
+                : `${total} result${total !== 1 ? 's' : ''} for "${filters.search}"`
+              : `${total} session${total !== 1 ? 's' : ''} across all tools`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -714,7 +730,7 @@ export function SessionList() {
         </div>
       </div>
 
-      <FilterBar onFilterChange={setFilters} />
+      <FilterBar onFilterChange={setFilters} busy={loading} />
 
       {selectionMode && (
         <div
@@ -843,16 +859,25 @@ export function SessionList() {
       )}
 
       {loading && sessions.length === 0 ? (
-        <div className="flex items-center justify-center py-20">
-          <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--text-tertiary)' }} />
+        <div className="flex flex-col items-center justify-center py-20 gap-3" style={{ color: 'var(--text-tertiary)' }}>
+          <RefreshCw size={20} className="animate-spin" />
+          {filters.search && <p className="text-[13px]">Searching transcripts for &quot;{filters.search}&quot;...</p>}
         </div>
       ) : sessions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3" style={{ color: 'var(--text-tertiary)' }}>
           <Inbox size={36} />
-          <p className="text-[13px]">No sessions found</p>
+          {filters.search ? (
+            <>
+              <p className="text-[13px]">No sessions match &quot;{filters.search}&quot;</p>
+              <p className="text-[12px]">Searched titles, summaries, and full transcripts across all statuses and sources.</p>
+              <p className="text-[12px]">Tip: keywords are space-separated and all must match — try fewer or shorter words.</p>
+            </>
+          ) : (
+            <p className="text-[13px]">No sessions found</p>
+          )}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 transition-opacity" style={{ opacity: loading ? 0.5 : 1 }}>
           {(() => {
             // Group sessions by slackChannelId when viewing slack-bot origin
             const isSlackView = filters.origin === 'slack-bot' || filters.origin === 'all';

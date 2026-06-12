@@ -144,12 +144,25 @@ export function SessionCard({
         <ToolBadge tool={session.tool} />
         <OriginBadge origin={session.origin} />
         <StatusBadge status={session.status} />
+        {session.matchedIn && (
+          <span
+            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+            style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)' }}
+            title="Where your search query matched"
+          >
+            {{ title: 'Matched: title', summary: 'Matched: summary', message: 'Matched: message', path: 'Matched: path', transcript: 'Matched: transcript' }[session.matchedIn]}
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <MessageSquare size={11} />
           {session.messageCount}
         </span>
         {session.cwd && (
-          <span className="flex items-center gap-1 truncate max-w-48">
+          <span
+            className="flex items-center gap-1 truncate max-w-64 px-1.5 py-0.5 rounded font-medium"
+            style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+            title={session.cwd}
+          >
             <Folder size={11} />
             {session.cwd.split(/[/\\]/).slice(-2).join('/')}
           </span>
@@ -323,7 +336,7 @@ export function SessionCard({
               style={{
                 backgroundColor: 'var(--bg-secondary)',
                 borderColor: 'var(--border)',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                boxShadow: '0 10px 30px rgba(26,25,23,0.14)',
               }}
             >
               <button
@@ -334,14 +347,14 @@ export function SessionCard({
                   setMenuOpen(false);
                 }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors"
-                style={{ color: session.pinned ? 'var(--warning, #f59e0b)' : 'var(--text-secondary)' }}
+                style={{ color: session.pinned ? 'var(--warning)' : 'var(--text-secondary)' }}
                 onMouseEnter={event => {
                   event.currentTarget.style.backgroundColor = 'var(--bg-hover)';
-                  event.currentTarget.style.color = session.pinned ? 'var(--text-secondary)' : '#f59e0b';
+                  event.currentTarget.style.color = session.pinned ? 'var(--text-secondary)' : 'var(--warning)';
                 }}
                 onMouseLeave={event => {
                   event.currentTarget.style.backgroundColor = 'transparent';
-                  event.currentTarget.style.color = session.pinned ? 'var(--warning, #f59e0b)' : 'var(--text-secondary)';
+                  event.currentTarget.style.color = session.pinned ? 'var(--warning)' : 'var(--text-secondary)';
                 }}
               >
                 {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}

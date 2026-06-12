@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
+import { getCachedSession, setCachedSession } from './scan-cache';
 
 function getCodexSessionsDir(): string {
   const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -17,6 +18,13 @@ export class CodexParser implements SessionParser {
 
     for (const filePath of jsonlFiles) {
       try {
+        const fileStat = fs.statSync(filePath);
+        const cached = getCachedSession(filePath, fileStat);
+        if (cached) {
+          sessions.push(cached);
+          continue;
+        }
+
         const content = fs.readFileSync(filePath, 'utf-8');
         const lines = content.split('\n').filter(l => l.trim());
         if (lines.length === 0) continue;
@@ -71,14 +79,13 @@ export class CodexParser implements SessionParser {
 
         if (!sessionId) sessionId = path.basename(filePath, '.jsonl');
         if (!createdAt) {
-          const stat = fs.statSync(filePath);
-          createdAt = stat.birthtime.toISOString();
+          createdAt = fileStat.birthtime.toISOString();
         }
         if (!updatedAt) updatedAt = createdAt;
 
         title = firstUserMessage.slice(0, 80) || `Codex Session ${sessionId.slice(0, 8)}`;
 
-        sessions.push({
+        const session: UnifiedSession = {
           id: `codex-${sessionId}`,
           tool: 'codex-cli',
           status: 'open',
@@ -92,7 +99,9 @@ export class CodexParser implements SessionParser {
           firstUserMessage,
           lastUserMessage,
           rawPath: filePath,
-        });
+        };
+        setCachedSession(filePath, fileStat, session);
+        sessions.push({ ...session });
       } catch { /* skip */ }
     }
 

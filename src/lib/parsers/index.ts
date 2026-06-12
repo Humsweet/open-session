@@ -43,6 +43,24 @@ export async function scanAllSessions(toolFilter?: ToolType): Promise<UnifiedSes
   return enrichSessionsWithAgentRemote(sessions);
 }
 
+/**
+ * Metadata-only lookup (no message parsing). Cheap when the scan cache is
+ * warm — use instead of getSessionDetail when messages aren't needed.
+ */
+export async function getSessionLite(sessionId: string): Promise<UnifiedSession | null> {
+  const tool = sessionId.split('-')[0];
+  const toolMap: Record<string, ToolType> = {
+    claude: 'claude-code',
+    copilot: 'copilot-cli',
+    codex: 'codex-cli',
+    gemini: 'gemini-cli',
+  };
+  const toolType = toolMap[tool];
+  if (!toolType) return null;
+  const sessions = await parsers[toolType].scan().catch(() => [] as UnifiedSession[]);
+  return sessions.find(s => s.id === sessionId) || null;
+}
+
 export async function getSessionDetail(sessionId: string): Promise<SessionDetail | null> {
   const tool = sessionId.split('-')[0] as string;
   const toolMap: Record<string, ToolType> = {

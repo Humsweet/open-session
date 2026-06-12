@@ -4,10 +4,10 @@ import { ToolType } from '@/lib/parsers/types';
 import { Terminal, Cpu, Sparkles, Bot, MessageSquare, Pin } from 'lucide-react';
 
 const toolConfig: Record<ToolType, { label: string; color: string; icon: typeof Terminal }> = {
-  'claude-code': { label: 'Claude', color: '#d97706', icon: Terminal },
-  'copilot-cli': { label: 'Copilot', color: '#6c5ce7', icon: Sparkles },
-  'codex-cli': { label: 'Codex', color: '#10b981', icon: Cpu },
-  'gemini-cli': { label: 'Gemini', color: '#3b82f6', icon: Bot },
+  'claude-code': { label: 'Claude', color: '#92400e', icon: Terminal },
+  'copilot-cli': { label: 'Copilot', color: '#6d28d9', icon: Sparkles },
+  'codex-cli': { label: 'Codex', color: '#065f46', icon: Cpu },
+  'gemini-cli': { label: 'Gemini', color: '#1d4ed8', icon: Bot },
 };
 
 export function ToolIcon({ tool, size = 16 }: { tool: ToolType; size?: number }) {
@@ -77,8 +77,8 @@ export function PinBadge({ pinned }: { pinned?: boolean }) {
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
       style={{
-        backgroundColor: 'rgba(245, 158, 11, 0.14)',
-        color: '#f59e0b',
+        backgroundColor: 'var(--warning-subtle)',
+        color: 'var(--warning)',
       }}
     >
       <Pin size={12} />

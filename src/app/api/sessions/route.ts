@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { scanAllSessions, ToolType } from '@/lib/parsers';
+import { getTranscriptLower } from '@/lib/parsers/scan-cache';
 import { getDb } from '@/lib/db/client';
 import { SessionOrigin, SessionStatus } from '@/lib/parsers/types';
 import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
@@ -27,6 +28,68 @@ function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpd
   return sessionTime > statusTime;
 }
 
+type SearchMatch = NonNullable<import('@/lib/parsers/types').UnifiedSession['matchedIn']>;
+
+const MATCH_RANK: SearchMatch[] = ['title', 'summary', 'message', 'path', 'transcript'];
+
+const CJK_CHAR = /^[぀-ヿ㐀-鿿豈-﫿]$/;
+
+interface TermMatcher {
+  term: string;
+  test: (text: string) => boolean;
+}
+
+/**
+ * CJK terms tolerate up to 2 characters between each query character, so
+ * 整備品 still finds 整備済品 / 整備済製品 — people rarely remember the
+ * exact official wording. Other terms use plain substring matching.
+ */
+function makeTermMatcher(term: string): TermMatcher {
+  const chars = [...term];
+  if (chars.length < 2 || !chars.every(c => CJK_CHAR.test(c))) {
+    return { term, test: text => text.includes(term) };
+  }
+  const re = new RegExp(chars.join('[\\s\\S]{0,2}?'));
+  return { term, test: text => re.test(text) };
+}
+
+/**
+ * Every term must match somewhere (AND), but different terms may match
+ * different fields. Returns the least prominent location among the terms —
+ * that is what explains why the session is in the results.
+ */
+function matchSession(
+  s: { title: string; summary?: string; firstUserMessage: string; lastUserMessage: string; cwd: string; rawPath: string },
+  matchers: TermMatcher[]
+): SearchMatch | null {
+  const fields: Array<{ rank: number; text: string }> = [
+    { rank: 0, text: s.title.toLowerCase() },
+    { rank: 1, text: (s.summary || '').toLowerCase() },
+    { rank: 2, text: (s.firstUserMessage + '\n' + s.lastUserMessage).toLowerCase() },
+    { rank: 3, text: s.cwd.toLowerCase() },
+  ];
+
+  let worstRank = 0;
+  const pending: TermMatcher[] = [];
+  for (const matcher of matchers) {
+    const hit = fields.find(f => matcher.test(f.text));
+    if (hit) {
+      worstRank = Math.max(worstRank, hit.rank);
+    } else {
+      pending.push(matcher);
+    }
+  }
+
+  if (pending.length > 0) {
+    // Cached lowercased transcript (terms are already lowercased upstream)
+    const transcript = getTranscriptLower(s.rawPath);
+    if (!pending.every(m => m.test(transcript))) return null;
+    worstRank = 4;
+  }
+
+  return MATCH_RANK[worstRank];
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -35,6 +98,8 @@ export async function GET(request: NextRequest) {
     const originFilter = searchParams.get('origin') as SessionOrigin | null;
     const pinnedFilter = searchParams.get('pinned');
     const search = searchParams.get('search')?.toLowerCase();
+    // Space-separated keywords are ANDed; each may match a different field
+    const searchTerms = search?.split(/\s+/).filter(Boolean) ?? [];
     const sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
@@ -93,12 +158,12 @@ export async function GET(request: NextRequest) {
       sessions = sessions.filter(s => s.pinned);
     }
 
-    if (search) {
-      sessions = sessions.filter(s =>
-        s.title.toLowerCase().includes(search) ||
-        s.firstUserMessage.toLowerCase().includes(search) ||
-        s.cwd.toLowerCase().includes(search)
-      );
+    if (searchTerms.length > 0) {
+      const matchers = searchTerms.map(makeTermMatcher);
+      sessions = sessions.flatMap(s => {
+        const matchedIn = matchSession(s, matchers);
+        return matchedIn ? [{ ...s, matchedIn }] : [];
+      });
     }
 
     // Apply sorting

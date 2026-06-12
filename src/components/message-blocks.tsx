@@ -16,21 +16,21 @@ export interface MessageGroup {
 // ============ Tool Colors ============
 
 const TOOL_COLORS: Record<string, { color: string; bg: string }> = {
-  Read:        { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
-  Edit:        { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
-  Write:       { color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
-  Bash:        { color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
-  Grep:        { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)' },
-  Glob:        { color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
-  Agent:       { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
-  ToolSearch:  { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
-  TaskCreate:  { color: '#14b8a6', bg: 'rgba(20,184,166,0.12)' },
-  TaskUpdate:  { color: '#14b8a6', bg: 'rgba(20,184,166,0.12)' },
-  Skill:       { color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  Read:        { color: '#1d4ed8', bg: 'rgba(29,78,216,0.10)' },
+  Edit:        { color: '#92400e', bg: 'rgba(146,64,14,0.10)' },
+  Write:       { color: '#065f46', bg: 'rgba(6,95,70,0.10)' },
+  Bash:        { color: '#b91c1c', bg: 'rgba(185,28,28,0.10)' },
+  Grep:        { color: '#155e75', bg: 'rgba(21,94,117,0.10)' },
+  Glob:        { color: '#be185d', bg: 'rgba(190,24,93,0.10)' },
+  Agent:       { color: '#6d28d9', bg: 'rgba(109,40,217,0.10)' },
+  ToolSearch:  { color: '#4b5563', bg: 'rgba(75,85,99,0.10)' },
+  TaskCreate:  { color: '#115e59', bg: 'rgba(17,94,89,0.10)' },
+  TaskUpdate:  { color: '#115e59', bg: 'rgba(17,94,89,0.10)' },
+  Skill:       { color: '#9a3412', bg: 'rgba(154,52,18,0.10)' },
 };
 
 function getToolStyle(name: string) {
-  return TOOL_COLORS[name] || { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' };
+  return TOOL_COLORS[name] || { color: '#4b5563', bg: 'rgba(75,85,99,0.10)' };
 }
 
 // ============ Helpers ============
@@ -76,10 +76,10 @@ function getToolSummary(name: string, input: Record<string, unknown>): string {
 function highlightJson(text: string): string {
   const escaped = escapeHtml(text);
   return escaped
-    .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*:/g, '<span style="color:#3b82f6">"$1"</span>:')
-    .replace(/:\s*"([^"\\]*(\\.[^"\\]*)*)"/g, ': <span style="color:#00c853">"$1"</span>')
-    .replace(/:\s*(true|false)\b/g, ': <span style="color:#ff9100">$1</span>')
-    .replace(/:\s*(\d+(\.\d+)?)\b/g, ': <span style="color:#ff9100">$1</span>')
+    .replace(/"([^"\\]*(\\.[^"\\]*)*)"\s*:/g, '<span style="color:#1d4ed8">"$1"</span>:')
+    .replace(/:\s*"([^"\\]*(\\.[^"\\]*)*)"/g, ': <span style="color:#166534">"$1"</span>')
+    .replace(/:\s*(true|false)\b/g, ': <span style="color:#92400e">$1</span>')
+    .replace(/:\s*(\d+(\.\d+)?)\b/g, ': <span style="color:#92400e">$1</span>')
     .replace(/:\s*(null)\b/g, ': <span style="color:var(--text-tertiary)">$1</span>');
 }
 
@@ -159,7 +159,7 @@ export function StatsBar({ messages }: { messages: SessionMessage[] }) {
       style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
       {thinking > 0 && <StatItem color="var(--thinking)" count={thinking} label="Thinking" />}
       <StatItem color="var(--text-primary)" count={text} label="Text" />
-      <StatItem color="#ef4444" count={toolCalls} label="Tool Calls" />
+      <StatItem color="#b91c1c" count={toolCalls} label="Tool Calls" />
       <StatItem color="var(--accent)" count={userMsgs} label="User" />
       {errors > 0 && <StatItem color="var(--danger)" count={errors} label="Errors" />}
     </div>
@@ -185,7 +185,7 @@ export function UserTextBlock({ message }: { message: SessionMessage }) {
 
   return (
     <div className="rounded-lg p-3 mt-5 first:mt-0"
-      style={{ backgroundColor: 'var(--accent-subtle)', border: '1px solid rgba(108,92,231,0.20)' }}>
+      style={{ backgroundColor: 'var(--accent-subtle)', border: '1px solid rgba(192,57,43,0.25)' }}>
       <div className="flex items-center gap-2 mb-2">
         <span className="w-5 h-5 rounded-full flex items-center justify-center"
           style={{ backgroundColor: 'var(--accent)', color: 'white' }}>
@@ -444,7 +444,7 @@ export function RawJsonModal({ json, onClose }: { json: string; onClose: () => v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-8"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      style={{ backgroundColor: 'rgba(26,25,23,0.45)' }}
       onClick={onClose}>
       <div className="w-full max-w-3xl max-h-[80vh] rounded-xl overflow-hidden flex flex-col"
         style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border)' }}

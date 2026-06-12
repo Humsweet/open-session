@@ -488,9 +488,9 @@ export function SessionDetailView({ id }: { id: string }) {
             onClick={() => setPinned(!session.pinned)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition-colors"
             style={{
-              backgroundColor: session.pinned ? 'rgba(245, 158, 11, 0.14)' : 'var(--bg-tertiary)',
-              borderColor: session.pinned ? '#f59e0b' : 'var(--border)',
-              color: session.pinned ? '#f59e0b' : 'var(--text-secondary)',
+              backgroundColor: session.pinned ? 'var(--warning-subtle)' : 'var(--bg-tertiary)',
+              borderColor: session.pinned ? 'var(--warning)' : 'var(--border)',
+              color: session.pinned ? 'var(--warning)' : 'var(--text-secondary)',
             }}
           >
             {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}
@@ -530,7 +530,7 @@ export function SessionDetailView({ id }: { id: string }) {
                 <div className="fixed inset-0 z-10" onClick={() => setShowStatusMenu(false)} />
                 <div
                   className="absolute top-full right-0 mt-1 py-1 rounded-lg border z-20 min-w-[150px]"
-                  style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}
+                  style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)', boxShadow: '0 8px 30px rgba(26,25,23,0.15)' }}
                 >
                   {[
                     { value: 'open', label: 'Open', icon: CircleDot, color: 'var(--success)' },

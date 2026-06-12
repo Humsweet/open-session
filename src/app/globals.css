@@ -1,30 +1,32 @@
 @import "tailwindcss";
 
+/* Light theme — derived from Daily_Briefing DESIGN.md §1.7 (warm light surfaces,
+   single red accent, desaturated earthy status colors) */
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a25;
-  --bg-hover: #1f1f2e;
-  --bg-active: #252536;
-  --border: #2a2a3a;
-  --border-subtle: #1e1e2e;
-  --text-primary: #ebebf0;
-  --text-secondary: #8b8b9e;
-  --text-tertiary: #5e5e72;
-  --accent: #6c5ce7;
-  --accent-hover: #7c6ef7;
-  --accent-subtle: rgba(108, 92, 231, 0.15);
-  --success: #00c853;
-  --success-subtle: rgba(0, 200, 83, 0.15);
-  --warning: #ff9100;
-  --warning-subtle: rgba(255, 145, 0, 0.15);
-  --danger: #ff5252;
-  --danger-subtle: rgba(255, 82, 82, 0.15);
-  --thinking: #a78bfa;
-  --thinking-subtle: rgba(167, 139, 250, 0.08);
-  --thinking-border: rgba(167, 139, 250, 0.2);
-  --slack: #7c5cff;
-  --slack-subtle: rgba(124, 92, 255, 0.22);
+  --bg-primary: #f5f4f1;
+  --bg-secondary: #ededea;
+  --bg-tertiary: #e7e5e0;
+  --bg-hover: #e9e7e2;
+  --bg-active: #dfddd7;
+  --border: #dcdad4;
+  --border-subtle: #e7e5e0;
+  --text-primary: #1a1917;
+  --text-secondary: #605e5b;
+  --text-tertiary: #6a6660;
+  --accent: #c0392b;
+  --accent-hover: #a93226;
+  --accent-subtle: rgba(192, 57, 43, 0.12);
+  --success: #38682c;
+  --success-subtle: rgba(78, 138, 62, 0.14);
+  --warning: #7d5512;
+  --warning-subtle: rgba(160, 112, 32, 0.14);
+  --danger: #b03020;
+  --danger-subtle: rgba(176, 48, 32, 0.12);
+  --thinking: #5c5980;
+  --thinking-subtle: rgba(92, 89, 128, 0.08);
+  --thinking-border: rgba(92, 89, 128, 0.25);
+  --slack: #611f69;
+  --slack-subtle: rgba(97, 31, 105, 0.12);
 }
 
 @theme inline {
