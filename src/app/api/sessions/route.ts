@@ -1,32 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { scanAllSessions, ToolType } from '@/lib/parsers';
+import { ToolType } from '@/lib/parsers';
 import { getTranscriptLower } from '@/lib/parsers/scan-cache';
-import { getDb } from '@/lib/db/client';
 import { SessionOrigin, SessionStatus } from '@/lib/parsers/types';
-import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
-import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
-
-function parseAsUtc(s: string): number {
-  // SQLite datetime('now') produces "YYYY-MM-DD HH:MM:SS" without timezone —
-  // JS parses that as local time. Normalize to UTC by appending 'Z'.
-  if (s && !s.endsWith('Z') && !s.includes('+') && !s.includes('T')) {
-    return new Date(s.replace(' ', 'T') + 'Z').getTime();
-  }
-  return new Date(s).getTime();
-}
-
-function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpdatedAt?: string | null) {
-  if (!statusUpdatedAt) return false;
-
-  const sessionTime = parseAsUtc(sessionUpdatedAt);
-  const statusTime = parseAsUtc(statusUpdatedAt);
-
-  if (Number.isNaN(sessionTime) || Number.isNaN(statusTime)) {
-    return false;
-  }
-
-  return sessionTime > statusTime;
-}
+import { loadMergedSessions } from '@/lib/session-merge';
 
 type SearchMatch = NonNullable<import('@/lib/parsers/types').UnifiedSession['matchedIn']>;
 
@@ -102,48 +78,22 @@ export async function GET(request: NextRequest) {
     const searchTerms = search?.split(/\s+/).filter(Boolean) ?? [];
     const sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
+    const projectFilter = searchParams.get('project');
 
-    let sessions = await scanAllSessions(toolFilter || undefined);
-    const summaryHelperIds = sessions.filter(isSummaryHelperSession).map(session => session.id);
+    let sessions = await loadMergedSessions(toolFilter || undefined);
 
-    if (summaryHelperIds.length > 0) {
-      persistSessionsClosed(summaryHelperIds);
+    // Project (working directory) is a navigation scope from the sidebar — keep
+    // it applied even while searching, so "search within this project" works.
+    // Prefix-matched so selecting a parent folder includes every project nested
+    // under it; the separator guard keeps "/a/b" from also matching "/a/bc".
+    if (projectFilter) {
+      sessions = sessions.filter(
+        s =>
+          s.cwd === projectFilter ||
+          s.cwd.startsWith(projectFilter + '/') ||
+          s.cwd.startsWith(projectFilter + '\\')
+      );
     }
-
-    // Merge with persisted state from DB
-    const db = getDb();
-    const states = db.prepare('SELECT * FROM session_state').all() as Array<{
-      session_id: string;
-      status: string;
-      summary: string | null;
-      custom_title: string | null;
-      summary_title_applied: number;
-      pinned: number;
-      status_updated_at: string | null;
-    }>;
-    const stateMap = new Map(states.map(s => [s.session_id, s]));
-
-    sessions = sessions.map(s => {
-      const state = stateMap.get(s.id);
-      const forcedClosed = isSummaryHelperSession(s);
-      const autoReopened =
-        !forcedClosed &&
-        state?.status === 'closed' &&
-        hasSessionActivitySinceStatusChange(s.updatedAt, state.status_updated_at);
-
-      if (autoReopened) {
-        persistSessionStatus(s.id, 'open');
-      }
-
-      return {
-        ...s,
-        status: forcedClosed ? 'closed' : autoReopened ? 'open' : (state?.status as SessionStatus) || s.status,
-        summary: state?.summary || s.summary,
-        title: state?.custom_title || s.title,
-        summaryTitleApplied: Boolean(state?.summary_title_applied),
-        pinned: Boolean(state?.pinned),
-      };
-    });
 
     // Apply filters
     if (statusFilter) {

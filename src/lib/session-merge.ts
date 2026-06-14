@@ -1,0 +1,78 @@
+import { scanAllSessions, ToolType } from '@/lib/parsers';
+import { getDb } from '@/lib/db/client';
+import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
+import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
+import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
+
+export function parseAsUtc(s: string): number {
+  // SQLite datetime('now') produces "YYYY-MM-DD HH:MM:SS" without timezone —
+  // JS parses that as local time. Normalize to UTC by appending 'Z'.
+  if (s && !s.endsWith('Z') && !s.includes('+') && !s.includes('T')) {
+    return new Date(s.replace(' ', 'T') + 'Z').getTime();
+  }
+  return new Date(s).getTime();
+}
+
+function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpdatedAt?: string | null) {
+  if (!statusUpdatedAt) return false;
+
+  const sessionTime = parseAsUtc(sessionUpdatedAt);
+  const statusTime = parseAsUtc(statusUpdatedAt);
+
+  if (Number.isNaN(sessionTime) || Number.isNaN(statusTime)) {
+    return false;
+  }
+
+  return sessionTime > statusTime;
+}
+
+/**
+ * Scan every tool's sessions and overlay persisted DB state (status, summary,
+ * title, pinned). This is the single source of truth for a session's *effective*
+ * state — shared by the sessions list API and the projects API so their notion
+ * of "open" never drifts apart. Side effects (force-close summary-helper
+ * sessions, auto-reopen sessions with activity after a manual close) are
+ * idempotent, so calling this from multiple endpoints is safe.
+ */
+export async function loadMergedSessions(toolFilter?: ToolType): Promise<UnifiedSession[]> {
+  const scanned = await scanAllSessions(toolFilter);
+
+  const summaryHelperIds = scanned.filter(isSummaryHelperSession).map(session => session.id);
+  if (summaryHelperIds.length > 0) {
+    persistSessionsClosed(summaryHelperIds);
+  }
+
+  const db = getDb();
+  const states = db.prepare('SELECT * FROM session_state').all() as Array<{
+    session_id: string;
+    status: string;
+    summary: string | null;
+    custom_title: string | null;
+    summary_title_applied: number;
+    pinned: number;
+    status_updated_at: string | null;
+  }>;
+  const stateMap = new Map(states.map(s => [s.session_id, s]));
+
+  return scanned.map(s => {
+    const state = stateMap.get(s.id);
+    const forcedClosed = isSummaryHelperSession(s);
+    const autoReopened =
+      !forcedClosed &&
+      state?.status === 'closed' &&
+      hasSessionActivitySinceStatusChange(s.updatedAt, state.status_updated_at);
+
+    if (autoReopened) {
+      persistSessionStatus(s.id, 'open');
+    }
+
+    return {
+      ...s,
+      status: forcedClosed ? 'closed' : autoReopened ? 'open' : (state?.status as SessionStatus) || s.status,
+      summary: state?.summary || s.summary,
+      title: state?.custom_title || s.title,
+      summaryTitleApplied: Boolean(state?.summary_title_applied),
+      pinned: Boolean(state?.pinned),
+    };
+  });
+}

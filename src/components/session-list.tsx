@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { extractSummaryTitle } from '@/lib/summarizer/summary-format';
 import { FilterBar, FilterState } from './filter-bar';
@@ -29,7 +30,15 @@ function writeCache(sessions: UnifiedSession[], total: number) {
   }
 }
 
+/** Last path segment of a working directory — the project's display name. */
+function projectLeaf(cwd: string): string {
+  const parts = cwd.split(/[/\\]/).filter(Boolean);
+  return parts[parts.length - 1] || cwd;
+}
+
 export function SessionList() {
+  const searchParams = useSearchParams();
+  const project = searchParams.get('project');
   const [sessions, setSessions] = useState<UnifiedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -85,6 +94,8 @@ export function SessionList() {
       if (!searching && filters.origin !== 'all') params.set('origin', filters.origin);
       if (filters.pinned !== 'all') params.set('pinned', filters.pinned);
       if (filters.search) params.set('search', filters.search);
+      // Project is a navigation scope from the sidebar — applied even while searching
+      if (project) params.set('project', project);
       params.set('sortBy', filters.sortBy);
       params.set('sortOrder', filters.sortOrder);
 
@@ -94,7 +105,9 @@ export function SessionList() {
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
       setTotal(data.total || 0);
-      if (!searching) writeCache(nextSessions, data.total || 0);
+      // Cache only the default view (no project scope, not searching) to avoid
+      // restoring a project-filtered subset on a fresh load of the unscoped page
+      if (!searching && !project) writeCache(nextSessions, data.total || 0);
       setSelectedIds(prev => {
         const visibleIds = new Set(nextSessions.map((session: UnifiedSession) => session.id));
         const nextSelected = new Set<string>();
@@ -110,11 +123,16 @@ export function SessionList() {
       // A newer fetch may already be in flight; only it may clear the spinner
       if (fetchAbortRef.current === controller) setLoading(false);
     }
-  }, [filters]);
+  }, [filters, project]);
 
-  // Restore cache on mount (client-only) to avoid hydration mismatch
+  // Restore cache on mount (client-only) to avoid hydration mismatch.
+  // Only the unscoped default view is cached, so skip restore under a project.
   useEffect(() => {
     if (cacheRestored) return;
+    if (project) {
+      setCacheRestored(true);
+      return;
+    }
     const cached = readCache();
     if (cached && cached.sessions.length > 0) {
       setSessions(cached.sessions);
@@ -706,8 +724,10 @@ export function SessionList() {
             {filters.search
               ? loading
                 ? `Searching for "${filters.search}"...`
-                : `${total} result${total !== 1 ? 's' : ''} for "${filters.search}"`
-              : `${total} session${total !== 1 ? 's' : ''} across all tools`}
+                : `${total} result${total !== 1 ? 's' : ''} for "${filters.search}"${project ? ` in ${projectLeaf(project)}` : ''}`
+              : project
+                ? `${total} session${total !== 1 ? 's' : ''} in ${projectLeaf(project)}`
+                : `${total} session${total !== 1 ? 's' : ''} across all tools`}
           </p>
         </div>
         <div className="flex items-center gap-2">

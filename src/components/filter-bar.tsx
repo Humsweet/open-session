@@ -12,13 +12,10 @@ const tools: { value: ToolType | 'all'; label: string }[] = [
   { value: 'gemini-cli', label: 'Gemini' },
 ];
 
-const primaryStatuses: { value: 'open' | 'closed'; label: string }[] = [
-  { value: 'open', label: 'Open' },
-  { value: 'closed', label: 'Closed' },
-];
-
 const extendedStatuses: { value: SessionStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
+  { value: 'open', label: 'Open' },
+  { value: 'closed', label: 'Closed' },
   { value: 'dropped', label: 'Dropped' },
 ];
 
@@ -156,7 +153,8 @@ export function FilterBar({ onFilterChange, busy = false }: FilterBarProps) {
   const currentSortLabel = sortOptions.find(option => option.value === activeSort)?.label || 'Last updated';
   const activeExtraFilters = [
     activeTool !== 'all',
-    activeStatus === 'all' || activeStatus === 'dropped',
+    // 'open' is the default view; anything else is a deliberate status filter
+    activeStatus !== 'open',
     activePinned === 'only',
   ].filter(Boolean).length;
 
@@ -228,26 +226,6 @@ export function FilterBar({ onFilterChange, busy = false }: FilterBarProps) {
               <X size={14} />
             </button>
           ) : null}
-        </div>
-
-        <div
-          className="flex items-center gap-1 p-1 rounded-lg transition-opacity"
-          style={{ backgroundColor: 'var(--bg-tertiary)', opacity: search.trim() ? 0.45 : 1 }}
-          title={search.trim() ? 'Ignored while searching — search covers all statuses' : undefined}
-        >
-          {primaryStatuses.map(status => (
-            <button
-              key={status.value}
-              onClick={() => applyFilters({ status: status.value })}
-              className="px-3 py-1 rounded-md text-[12px] font-medium transition-colors"
-              style={{
-                backgroundColor: activeStatus === status.value ? 'var(--accent-subtle)' : 'transparent',
-                color: activeStatus === status.value ? 'var(--accent)' : 'var(--text-tertiary)',
-              }}
-            >
-              {status.label}
-            </button>
-          ))}
         </div>
 
         <div
