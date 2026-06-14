@@ -49,6 +49,16 @@ function initSchema(db: Database.Database) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- Persistent metadata cache: one row per session file, so a fresh server
+    -- process restores parsed metadata without re-reading every transcript.
+    -- file_key is "mtimeMs:size" — a row is valid only while it matches the
+    -- file on disk, so changed/growing files are re-parsed and nothing else is.
+    CREATE TABLE IF NOT EXISTS scan_cache (
+      raw_path TEXT PRIMARY KEY,
+      file_key TEXT NOT NULL,
+      session_json TEXT NOT NULL
+    );
   `);
 
   const columns = db.prepare("PRAGMA table_info(session_state)").all() as Array<{ name: string }>;

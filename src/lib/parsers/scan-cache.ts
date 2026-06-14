@@ -1,11 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession } from './types';
+import { getDb } from '../db/client';
 
 /**
- * In-memory caches keyed by file identity (mtimeMs + size) so repeated
- * API calls only re-parse files that actually changed. Both caches live
- * for the lifetime of the server process.
+ * Session metadata cache keyed by file identity (mtimeMs + size) so repeated
+ * scans only re-parse files that actually changed.
+ *
+ * The in-memory Map is the hot path within a process; it is backed by the
+ * SQLite `scan_cache` table so a fresh process (launchd restart, reconcile
+ * rebuild) restores all metadata without re-reading ~400MB of transcripts —
+ * only files whose mtime/size changed since last run get re-parsed. Writes are
+ * batched into one transaction on the next tick to avoid per-file fsyncs.
  */
 
 interface ScanEntry {
@@ -19,7 +25,57 @@ function fileKey(stat: fs.Stats): string {
   return `${stat.mtimeMs}:${stat.size}`;
 }
 
+// --- SQLite persistence ----------------------------------------------------
+
+let hydrated = false;
+
+/** Load every persisted row into the in-memory Map once per process. */
+function ensureHydrated(): void {
+  if (hydrated) return;
+  hydrated = true; // set first so a parse error can't trigger reload loops
+  try {
+    const rows = getDb()
+      .prepare('SELECT raw_path, file_key, session_json FROM scan_cache')
+      .all() as Array<{ raw_path: string; file_key: string; session_json: string }>;
+    for (const row of rows) {
+      try {
+        sessionCache.set(row.raw_path, { key: row.file_key, session: JSON.parse(row.session_json) });
+      } catch { /* skip a corrupt row; the file will just be re-parsed */ }
+    }
+  } catch { /* DB unavailable — fall back to a process-lifetime in-memory cache */ }
+}
+
+const pendingWrites = new Map<string, ScanEntry>();
+let flushScheduled = false;
+
+function scheduleFlush(): void {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  setImmediate(flushScanCache);
+}
+
+/** Commit queued metadata rows to SQLite in a single transaction. */
+export function flushScanCache(): void {
+  flushScheduled = false;
+  if (pendingWrites.size === 0) return;
+  const batch = [...pendingWrites.entries()];
+  pendingWrites.clear();
+  try {
+    const db = getDb();
+    const stmt = db.prepare(
+      'INSERT INTO scan_cache (raw_path, file_key, session_json) VALUES (?, ?, ?) ' +
+        'ON CONFLICT(raw_path) DO UPDATE SET file_key = excluded.file_key, session_json = excluded.session_json'
+    );
+    db.transaction(() => {
+      for (const [rawPath, entry] of batch) {
+        stmt.run(rawPath, entry.key, JSON.stringify(entry.session));
+      }
+    })();
+  } catch { /* DB write failed — in-memory cache still serves this process */ }
+}
+
 export function getCachedSession(filePath: string, stat: fs.Stats): UnifiedSession | null {
+  ensureHydrated();
   const entry = sessionCache.get(filePath);
   if (!entry || entry.key !== fileKey(stat)) return null;
   // Shallow copy: callers spread-merge DB state into these objects
@@ -27,7 +83,11 @@ export function getCachedSession(filePath: string, stat: fs.Stats): UnifiedSessi
 }
 
 export function setCachedSession(filePath: string, stat: fs.Stats, session: UnifiedSession): void {
-  sessionCache.set(filePath, { key: fileKey(stat), session });
+  ensureHydrated();
+  const entry: ScanEntry = { key: fileKey(stat), session };
+  sessionCache.set(filePath, entry);
+  pendingWrites.set(filePath, entry);
+  scheduleFlush();
 }
 
 /**
@@ -38,9 +98,10 @@ export function setCachedSession(filePath: string, stat: fs.Stats, session: Unif
  * CJK, so matching against lowercased text is always correct.
  */
 
-// Sized to hold every transcript on this machine (~400MB as UTF-16) so warm
-// searches never touch disk; LRU eviction is a safety valve, not the norm
-const TRANSCRIPT_CACHE_MAX_BYTES = 1024 * 1024 * 1024;
+// Search normally runs through ripgrep (see transcript-search.ts), which keeps
+// nothing in the Node heap. This cache only backs the rg-missing fallback, so a
+// modest bound is plenty; LRU eviction keeps it from growing unbounded there.
+const TRANSCRIPT_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 
 interface TranscriptEntry {
   key: string;

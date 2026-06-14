@@ -6,6 +6,7 @@ import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { extractSummaryTitle } from '@/lib/summarizer/summary-format';
 import { FilterBar, FilterState } from './filter-bar';
 import { SessionCard } from './session-card';
+import { useProgressive } from './use-progressive';
 import { RefreshCw, Inbox, CheckCircle2, Circle, Sparkles, X, ChevronRight } from 'lucide-react';
 
 const SESSIONS_CACHE_KEY = 'open-session:cache';
@@ -77,6 +78,10 @@ export function SessionList() {
   const [summaryProgressById, setSummaryProgressById] = useState<Record<string, { status: string; engineLabel: string }>>({});
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+
+  // Window the card list so hundreds of sessions don't all mount on first paint
+  // (and don't all re-render on every search keystroke).
+  const { count: visibleCards, sentinelRef } = useProgressive(sessions.length, 40, 40);
 
   const fetchAbortRef = useRef<AbortController | null>(null);
 
@@ -990,7 +995,7 @@ export function SessionList() {
               </div>
             );
 
-            return groups.map((item, i) => {
+            return groups.slice(0, visibleCards).map((item, i) => {
               if (item.type === 'single') {
                 return renderCard(item.session);
               }
@@ -1035,6 +1040,11 @@ export function SessionList() {
               );
             });
           })()}
+          {visibleCards < sessions.length && (
+            <div ref={sentinelRef} className="py-3 text-center text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+              Loading more… ({visibleCards} / {sessions.length})
+            </div>
+          )}
         </div>
       )}
     </div>

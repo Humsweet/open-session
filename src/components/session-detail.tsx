@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { SessionDetail as SessionDetailType, UnifiedSession } from '@/lib/parsers/types';
 import { OriginBadge, PinBadge, ToolBadge, StatusBadge } from './tool-icon';
 import { SimpleMarkdown } from './simple-markdown';
+import { useProgressive } from './use-progressive';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
 import {
   ArrowLeft, MessageSquare, Folder, Clock, Sparkles,
@@ -117,6 +118,10 @@ export function SessionDetailView({ id }: { id: string }) {
     return offsets;
   }, [groups]);
 
+  // Render the conversation in windows so a 1000+ block session opens instantly
+  // instead of mounting every block; grows as the sentinel scrolls into view.
+  const { count: visibleGroups, sentinelRef } = useProgressive(groups.length);
+
   const toggleExpanded = (index: number) => {
     setExpandedIndices(current => {
       const next = new Set(current);
@@ -127,6 +132,15 @@ export function SessionDetailView({ id }: { id: string }) {
       }
       return next;
     });
+  };
+
+  // Raw JSON is fetched on demand (not shipped with every block) — keeps big
+  // sessions light. Clicking "{ }" pulls just that one source line.
+  const showRaw = (rawIndex: number) => {
+    fetch(`/api/sessions/${id}/raw?line=${rawIndex}`)
+      .then(r => r.json())
+      .then(d => { if (d.raw) setRawJsonContent(d.raw); })
+      .catch(console.error);
   };
 
   const expandAll = () => {
@@ -761,7 +775,7 @@ export function SessionDetailView({ id }: { id: string }) {
               </p>
             ) : hasRichBlocks ? (
               <div className="flex flex-col gap-0.5">
-                {groups.map((group, groupIndex) => {
+                {groups.slice(0, visibleGroups).map((group, groupIndex) => {
                   const baseIndex = groupOffsets[groupIndex];
 
                   if (group.type === 'single') {
@@ -775,7 +789,7 @@ export function SessionDetailView({ id }: { id: string }) {
                           message={message}
                           expanded={expandedIndices.has(index)}
                           onToggle={() => toggleExpanded(index)}
-                          onRawJson={setRawJsonContent}
+                          onRawJson={showRaw}
                         />
                       );
                     }
@@ -788,7 +802,7 @@ export function SessionDetailView({ id }: { id: string }) {
                       <AssistantTextBlock
                         key={index}
                         message={message}
-                        onRawJson={setRawJsonContent}
+                        onRawJson={showRaw}
                       />
                     );
                   }
@@ -830,14 +844,14 @@ export function SessionDetailView({ id }: { id: string }) {
                                 message={message}
                                 expanded={expandedIndices.has(index)}
                                 onToggle={() => toggleExpanded(index)}
-                                onRawJson={setRawJsonContent}
+                                onRawJson={showRaw}
                               />
                             ) : (
                               <ToolResultBlock
                                 message={message}
                                 expanded={expandedIndices.has(index)}
                                 onToggle={() => toggleExpanded(index)}
-                                onRawJson={setRawJsonContent}
+                                onRawJson={showRaw}
                               />
                             )}
                           </div>
@@ -846,6 +860,11 @@ export function SessionDetailView({ id }: { id: string }) {
                     </div>
                   );
                 })}
+                {visibleGroups < groups.length && (
+                  <div ref={sentinelRef} className="py-3 text-center text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    Loading more… ({visibleGroups} / {groups.length})
+                  </div>
+                )}
               </div>
             ) : (
               <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>

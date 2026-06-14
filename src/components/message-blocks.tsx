@@ -215,7 +215,7 @@ export function UserTextBlock({ message }: { message: SessionMessage }) {
 
 export function AssistantTextBlock({ message, onRawJson }: {
   message: SessionMessage;
-  onRawJson?: (json: string) => void;
+  onRawJson?: (rawIndex: number) => void;
 }) {
   return (
     <div className="rounded-lg p-3"
@@ -229,8 +229,8 @@ export function AssistantTextBlock({ message, onRawJson }: {
         <span className="text-[11px] ml-auto" style={{ color: 'var(--text-tertiary)' }}>
           {formatTime(message.timestamp)}
         </span>
-        {message.rawJson && onRawJson && (
-          <button onClick={() => onRawJson(message.rawJson!)}
+        {message.rawIndex !== undefined && onRawJson && (
+          <button onClick={() => onRawJson(message.rawIndex!)}
             className="text-[10px] px-1.5 py-0.5 rounded transition-colors"
             style={{ color: 'var(--text-tertiary)' }}
             onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}
@@ -254,7 +254,7 @@ export function ThinkingBlock({ message, expanded, onToggle, onRawJson }: {
   message: SessionMessage;
   expanded: boolean;
   onToggle: () => void;
-  onRawJson?: (json: string) => void;
+  onRawJson?: (rawIndex: number) => void;
 }) {
   return (
     <div className="rounded-lg overflow-hidden cursor-pointer select-none"
@@ -275,8 +275,8 @@ export function ThinkingBlock({ message, expanded, onToggle, onRawJson }: {
         <span className="text-[12px] font-medium italic" style={{ color: 'var(--thinking)' }}>
           Thinking...
         </span>
-        {message.rawJson && onRawJson && (
-          <button onClick={(e) => { e.stopPropagation(); onRawJson(message.rawJson!); }}
+        {message.rawIndex !== undefined && onRawJson && (
+          <button onClick={(e) => { e.stopPropagation(); onRawJson(message.rawIndex!); }}
             className="ml-auto text-[10px] px-1.5 py-0.5 rounded transition-colors"
             style={{ color: 'var(--text-tertiary)' }}
             onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}
@@ -313,7 +313,7 @@ export function ToolCallBlock({ message, expanded, onToggle, onRawJson }: {
   message: SessionMessage;
   expanded: boolean;
   onToggle: () => void;
-  onRawJson?: (json: string) => void;
+  onRawJson?: (rawIndex: number) => void;
 }) {
   const toolStyle = getToolStyle(message.toolName || '');
   const summary = message.toolInput ? getToolSummary(message.toolName || '', message.toolInput) : '';
@@ -338,8 +338,8 @@ export function ToolCallBlock({ message, expanded, onToggle, onRawJson }: {
           style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono), monospace' }}>
           {summary}
         </span>
-        {message.rawJson && onRawJson && (
-          <button onClick={(e) => { e.stopPropagation(); onRawJson(message.rawJson!); }}
+        {message.rawIndex !== undefined && onRawJson && (
+          <button onClick={(e) => { e.stopPropagation(); onRawJson(message.rawIndex!); }}
             className="text-[10px] px-1.5 py-0.5 rounded transition-colors flex-shrink-0"
             style={{ color: 'var(--text-tertiary)' }}
             onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}
@@ -367,7 +367,7 @@ export function ToolResultBlock({ message, expanded, onToggle, onRawJson }: {
   message: SessionMessage;
   expanded: boolean;
   onToggle: () => void;
-  onRawJson?: (json: string) => void;
+  onRawJson?: (rawIndex: number) => void;
 }) {
   const preview = message.content.split('\n')[0].slice(0, 100);
   const sizeStr = formatBytes(new TextEncoder().encode(message.content).length);
@@ -398,8 +398,8 @@ export function ToolResultBlock({ message, expanded, onToggle, onRawJson }: {
         <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-tertiary)' }}>
           {sizeStr}
         </span>
-        {message.rawJson && onRawJson && (
-          <button onClick={(e) => { e.stopPropagation(); onRawJson(message.rawJson!); }}
+        {message.rawIndex !== undefined && onRawJson && (
+          <button onClick={(e) => { e.stopPropagation(); onRawJson(message.rawIndex!); }}
             className="text-[10px] px-1.5 py-0.5 rounded transition-colors flex-shrink-0"
             style={{ color: 'var(--text-tertiary)' }}
             onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ToolType } from '@/lib/parsers';
 import { getTranscriptLower } from '@/lib/parsers/scan-cache';
+import { searchTranscripts, TermDescriptor } from '@/lib/parsers/transcript-search';
 import { SessionOrigin, SessionStatus } from '@/lib/parsers/types';
 import { loadMergedSessions } from '@/lib/session-merge';
 
@@ -10,8 +11,8 @@ const MATCH_RANK: SearchMatch[] = ['title', 'summary', 'message', 'path', 'trans
 
 const CJK_CHAR = /^[぀-ヿ㐀-鿿豈-﫿]$/;
 
-interface TermMatcher {
-  term: string;
+interface TermMatcher extends TermDescriptor {
+  /** Match against an already-loaded metadata field (and the fallback transcript). */
   test: (text: string) => boolean;
 }
 
@@ -23,10 +24,11 @@ interface TermMatcher {
 function makeTermMatcher(term: string): TermMatcher {
   const chars = [...term];
   if (chars.length < 2 || !chars.every(c => CJK_CHAR.test(c))) {
-    return { term, test: text => text.includes(term) };
+    return { term, isRegex: false, pattern: term, test: text => text.includes(term) };
   }
-  const re = new RegExp(chars.join('[\\s\\S]{0,2}?'));
-  return { term, test: text => re.test(text) };
+  const pattern = chars.join('[\\s\\S]{0,2}?');
+  const re = new RegExp(pattern);
+  return { term, isRegex: true, pattern, test: text => re.test(text) };
 }
 
 /**
@@ -35,8 +37,11 @@ function makeTermMatcher(term: string): TermMatcher {
  * that is what explains why the session is in the results.
  */
 function matchSession(
-  s: { title: string; summary?: string; firstUserMessage: string; lastUserMessage: string; cwd: string; rawPath: string },
-  matchers: TermMatcher[]
+  s: { id: string; title: string; summary?: string; firstUserMessage: string; lastUserMessage: string; cwd: string; rawPath: string },
+  matchers: TermMatcher[],
+  // term -> set of session ids whose transcript contains it (ripgrep result).
+  // null means ripgrep is unavailable, so fall back to the in-process scan.
+  transcriptHits: Map<string, Set<string>> | null
 ): SearchMatch | null {
   const fields: Array<{ rank: number; text: string }> = [
     { rank: 0, text: s.title.toLowerCase() },
@@ -57,9 +62,14 @@ function matchSession(
   }
 
   if (pending.length > 0) {
-    // Cached lowercased transcript (terms are already lowercased upstream)
-    const transcript = getTranscriptLower(s.rawPath);
-    if (!pending.every(m => m.test(transcript))) return null;
+    if (transcriptHits) {
+      // ripgrep already scanned every transcript; just check membership.
+      if (!pending.every(m => transcriptHits.get(m.term)?.has(s.id))) return null;
+    } else {
+      // Fallback: cached lowercased transcript (terms are already lowercased upstream)
+      const transcript = getTranscriptLower(s.rawPath);
+      if (!pending.every(m => m.test(transcript))) return null;
+    }
     worstRank = 4;
   }
 
@@ -110,8 +120,11 @@ export async function GET(request: NextRequest) {
 
     if (searchTerms.length > 0) {
       const matchers = searchTerms.map(makeTermMatcher);
+      // Scan all candidate transcripts once with ripgrep (null => rg missing,
+      // matchSession falls back to the in-process transcript read).
+      const transcriptHits = await searchTranscripts(matchers, sessions);
       sessions = sessions.flatMap(s => {
-        const matchedIn = matchSession(s, matchers);
+        const matchedIn = matchSession(s, matchers, transcriptHits);
         return matchedIn ? [{ ...s, matchedIn }] : [];
       });
     }

@@ -38,7 +38,9 @@ export interface SessionMessage {
   toolCallId?: string;
   isError?: boolean;
   isRedacted?: boolean;
-  rawJson?: string;
+  /** Index of the source JSONL line (in the trim-filtered file), so the raw
+   * entry can be fetched on demand instead of shipped with every message. */
+  rawIndex?: number;
 }
 
 export interface SessionDetail extends UnifiedSession {

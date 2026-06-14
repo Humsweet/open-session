@@ -49,7 +49,8 @@ function extractUserMessage(obj: ParsedEntry): { content: string; timestamp?: st
 function parseMessages(lines: string[]): SessionMessage[] {
   const messages: SessionMessage[] = [];
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
     try {
       const obj = JSON.parse(line);
       if (!obj.message?.role) continue;
@@ -60,8 +61,6 @@ function parseMessages(lines: string[]): SessionMessage[] {
 
       const content = obj.message.content;
       const timestamp = obj.timestamp;
-      const rawEntry = JSON.stringify(obj);
-      const rawJson = rawEntry.length > 16384 ? rawEntry.slice(0, 16384) + '...(truncated)' : rawEntry;
 
       if (typeof content === 'string') {
         if (content.includes('<command-name>') || content.includes('<local-command')) continue;
@@ -70,7 +69,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
           blockType: 'text',
           content,
           timestamp,
-          rawJson,
+          rawIndex: lineIndex,
         });
       } else if (Array.isArray(content)) {
         for (const block of content) {
@@ -82,7 +81,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
                   blockType: 'text',
                   content: block.text,
                   timestamp,
-                  rawJson,
+                  rawIndex: lineIndex,
                 });
               }
               break;
@@ -94,7 +93,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
                 content: block.thinking || '',
                 isRedacted: !block.thinking,
                 timestamp,
-                rawJson,
+                rawIndex: lineIndex,
               });
               break;
 
@@ -107,7 +106,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
                 toolInput: block.input,
                 toolCallId: block.id,
                 timestamp,
-                rawJson,
+                rawIndex: lineIndex,
               });
               break;
 
@@ -127,7 +126,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
                 isError: block.is_error || false,
                 toolCallId: block.tool_use_id,
                 timestamp,
-                rawJson,
+                rawIndex: lineIndex,
               });
               break;
             }
@@ -137,6 +136,60 @@ function parseMessages(lines: string[]): SessionMessage[] {
     } catch { /* skip */ }
   }
   return messages;
+}
+
+/** Build a session's metadata from its already-read JSONL lines. Shared by
+ * scan() and getDetail() so neither has to re-scan every other file. */
+function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats): UnifiedSession {
+  const sessionId = path.basename(filePath, '.jsonl');
+
+  // Single pass: metadata, message count, and first/last user message
+  let cwd = '';
+  let slug = '';
+  let messageCount = 0;
+  let firstMsg: { content: string; timestamp?: string } | null = null;
+  let lastMsg: { content: string; timestamp?: string } | null = null;
+
+  for (const line of lines) {
+    let obj: ParsedEntry;
+    try {
+      obj = JSON.parse(line);
+    } catch { continue; }
+
+    if (obj.cwd && !cwd) cwd = obj.cwd;
+    if (obj.slug && !slug) slug = obj.slug;
+
+    const role = obj.message?.role;
+    if (role === 'user' || role === 'assistant') messageCount++;
+
+    const msg = extractUserMessage(obj);
+    if (msg) {
+      if (!firstMsg) firstMsg = msg;
+      lastMsg = msg;
+    }
+  }
+
+  const createdAt = firstMsg?.timestamp || stat.birthtime.toISOString();
+  const updatedAt = lastMsg?.timestamp || stat.mtime.toISOString();
+
+  const title = slug
+    ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : (firstMsg?.content.slice(0, 80) || sessionId);
+
+  return {
+    id: `claude-${sessionId}`,
+    tool: 'claude-code',
+    status: 'open',
+    origin: 'local',
+    title,
+    cwd,
+    createdAt,
+    updatedAt,
+    messageCount,
+    firstUserMessage: firstMsg?.content || '',
+    lastUserMessage: lastMsg?.content || '',
+    rawPath: filePath,
+  };
 }
 
 export class ClaudeParser implements SessionParser {
@@ -166,55 +219,7 @@ export class ClaudeParser implements SessionParser {
           const lines = content.split('\n').filter(l => l.trim());
           if (lines.length === 0) continue;
 
-          const sessionId = path.basename(file, '.jsonl');
-
-          // Single pass: metadata, message count, and first/last user message
-          let cwd = '';
-          let slug = '';
-          let messageCount = 0;
-          let firstMsg: { content: string; timestamp?: string } | null = null;
-          let lastMsg: { content: string; timestamp?: string } | null = null;
-
-          for (const line of lines) {
-            let obj: ParsedEntry;
-            try {
-              obj = JSON.parse(line);
-            } catch { continue; }
-
-            if (obj.cwd && !cwd) cwd = obj.cwd;
-            if (obj.slug && !slug) slug = obj.slug;
-
-            const role = obj.message?.role;
-            if (role === 'user' || role === 'assistant') messageCount++;
-
-            const msg = extractUserMessage(obj);
-            if (msg) {
-              if (!firstMsg) firstMsg = msg;
-              lastMsg = msg;
-            }
-          }
-
-          const createdAt = firstMsg?.timestamp || stat.birthtime.toISOString();
-          const updatedAt = lastMsg?.timestamp || stat.mtime.toISOString();
-
-          const title = slug
-            ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-            : (firstMsg?.content.slice(0, 80) || sessionId);
-
-          const session: UnifiedSession = {
-            id: `claude-${sessionId}`,
-            tool: 'claude-code',
-            status: 'open',
-            origin: 'local',
-            title,
-            cwd,
-            createdAt,
-            updatedAt,
-            messageCount,
-            firstUserMessage: firstMsg?.content || '',
-            lastUserMessage: lastMsg?.content || '',
-            rawPath: filePath,
-          };
+          const session = buildClaudeSession(filePath, lines, stat);
           setCachedSession(filePath, stat, session);
           sessions.push({ ...session });
         } catch { /* skip broken files */ }
@@ -235,13 +240,18 @@ export class ClaudeParser implements SessionParser {
       const filePath = path.join(projectsDir, folder.name, `${realId}.jsonl`);
       if (!fs.existsSync(filePath)) continue;
 
+      const stat = fs.statSync(filePath);
       const content = fs.readFileSync(filePath, 'utf-8');
       const lines = content.split('\n').filter(l => l.trim());
       const messages = parseMessages(lines);
 
-      const sessions = await this.scan();
-      const session = sessions.find(s => s.id === sessionId);
-      if (!session) return null;
+      // Metadata from the cache when fresh, else from the lines we just read —
+      // never re-scan every other session just to label this one.
+      let session = getCachedSession(filePath, stat);
+      if (!session) {
+        session = buildClaudeSession(filePath, lines, stat);
+        setCachedSession(filePath, stat, session);
+      }
 
       return { ...session, messages };
     }
