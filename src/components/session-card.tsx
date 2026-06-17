@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
-import { OriginBadge, PinBadge, ToolBadge, StatusBadge } from './tool-icon';
+import { OriginBadge, PinBadge, ToolBadge, StatusBadge, ArchivedBadge } from './tool-icon';
 import { extractSummaryOverview, extractSummaryTitle } from '@/lib/summarizer/summary-format';
 import { MessageSquare, Folder, Clock, MoreHorizontal, CircleDot, CircleOff, Trash2, Sparkles, Check, Pencil, X, Pin, PinOff } from 'lucide-react';
 
@@ -143,6 +143,7 @@ export function SessionCard({
         <PinBadge pinned={session.pinned} />
         <ToolBadge tool={session.tool} />
         <OriginBadge origin={session.origin} />
+        <ArchivedBadge archived={session.archived} />
         <StatusBadge status={session.status} />
         {session.matchedIn && (
           <span

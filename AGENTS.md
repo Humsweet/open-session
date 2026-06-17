@@ -74,6 +74,46 @@ tail -f ~/Library/Logs/open-session.log         # 看运行日志
 lsof -nP -iTCP:3001 -sTCP:LISTEN                # 确认 3001 在监听
 ```
 
+## AI Agent Sessions 备份(外置 SSD 归档)
+
+Claude Code 默认 `cleanupPeriodDays=30`,启动时自动删 30 天前的 session transcript;
+Codex / Gemini 等也各有清理。`scripts/backup-sessions.sh` 在清理删掉之前,把各源
+**只增不删、幂等增量**地镜像到外置 SSD,让历史永不丢失,并能在 open-session 里
+以「Archived (SSD)」来源回看。
+
+- 备份脚本:`scripts/backup-sessions.sh`(zsh,可独立于 node 运行,供定时器调用)
+- 备份根:`/Volumes/Extreme SSD/Backup/AI Agent Sessions`(可用环境变量
+  `OPEN_SESSION_BACKUP_ROOT` 覆盖)。**单一真相源**:脚本里的默认值与
+  `src/lib/parsers/session-roots.ts` 的 `DEFAULT_BACKUP_ROOT` 必须一致,换盘只改这两处。
+- 布局(parser 友好,open-session 用同一套 parser、只换个根来读):
+  `claude/projects`、`codex/sessions`、`copilot/session-state`、`gemini/{tmp,antigravity}`
+- 同步策略:`rsync -a --update`(**绝无 `--delete`**)—— 源更新(jsonl 追加变大)同步过去,
+  源被清理删掉的文件在备份里**原样保留**。
+- 失败边界:SSD 未挂载时脚本 `exit 2` 并清晰报错,绝不报「成功」、绝不写进未挂载占位目录。
+- 日志:`~/Library/Logs/open-session-backup.log`;每次跑还在备份根落一份 `MANIFEST.txt`。
+- 手动跑:`scripts/backup-sessions.sh`(幂等,可随时重复跑)。
+
+### 定时运行(可选,由你决定是否启用)
+
+`scripts/com.hanyuyang.open-session-backup.plist.template` 是 LaunchAgent 模板(默认每天 03:00)。
+**不会自动安装** —— 只有定期跑才能在清理前抢救数据,但是否上系统级定时器交给你决定:
+
+```bash
+REPO="$(pwd)"   # 在仓库根目录执行
+sed -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" \
+  scripts/com.hanyuyang.open-session-backup.plist.template \
+  > ~/Library/LaunchAgents/com.hanyuyang.open-session-backup.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hanyuyang.open-session-backup.plist
+```
+
+### open-session 里看归档
+
+各 parser 现在按「本地源 + 备份盘(挂载时)」多根扫描(SSOT 在
+`src/lib/parsers/session-roots.ts`)。同一 session id 在本地与备份都存在时,
+`src/lib/parsers/index.ts` 的去重逻辑只显示一条,且优先显示**活的本地副本**;
+只存在于备份(本地已被清理)的历史 session 会以 `archived` 标记呈现,列表/详情页打上
+「Archived (SSD)」徽章。SSD 没挂载时备份根自动从扫描中消失,只显示本地,不报错。
+
 ## 注意事项
 
 - 运行模式是 **production**,不支持热重载,代码改动必须 build 再 restart —— pull 时由 hook 自动完成;本机直接改代码后手动跑 reconcile 脚本。

@@ -1,7 +1,7 @@
 'use client';
 
 import { ToolType } from '@/lib/parsers/types';
-import { Terminal, Cpu, Sparkles, Bot, MessageSquare, Pin } from 'lucide-react';
+import { Terminal, Cpu, Sparkles, Bot, MessageSquare, Pin, Archive } from 'lucide-react';
 
 const toolConfig: Record<ToolType, { label: string; color: string; icon: typeof Terminal }> = {
   'claude-code': { label: 'Claude', color: '#92400e', icon: Terminal },
@@ -66,6 +66,24 @@ export function OriginBadge({ origin }: { origin: 'local' | 'slack-bot' }) {
     >
       <MessageSquare size={12} />
       Slack Bot
+    </span>
+  );
+}
+
+export function ArchivedBadge({ archived }: { archived?: boolean }) {
+  if (!archived) return null;
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+      style={{
+        backgroundColor: 'var(--bg-tertiary)',
+        color: 'var(--text-tertiary)',
+      }}
+      title="Recovered from the backup SSD — this session is no longer in the live local source"
+    >
+      <Archive size={12} />
+      Archived (SSD)
     </span>
   );
 }

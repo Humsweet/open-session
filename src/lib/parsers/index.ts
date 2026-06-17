@@ -22,7 +22,19 @@ function pickPreferredSession(current: UnifiedSession | undefined, candidate: Un
     return candidateUpdatedAt > currentUpdatedAt ? candidate : current;
   }
 
-  return candidate.messageCount > current.messageCount ? candidate : current;
+  if (candidate.messageCount !== current.messageCount) {
+    return candidate.messageCount > current.messageCount ? candidate : current;
+  }
+
+  // Equal content found in two roots (live local + backup SSD): keep the live
+  // (non-archived) copy as the one displayed, so the row reads as live, not
+  // archived. A session found ONLY in the backup keeps archived=true — that is
+  // the cleaned-up-locally history this feature exists to recover.
+  if (Boolean(current.archived) !== Boolean(candidate.archived)) {
+    return current.archived ? candidate : current;
+  }
+
+  return current;
 }
 
 export async function scanAllSessions(toolFilter?: ToolType): Promise<UnifiedSession[]> {

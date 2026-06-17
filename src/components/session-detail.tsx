@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { SessionDetail as SessionDetailType, UnifiedSession } from '@/lib/parsers/types';
-import { OriginBadge, PinBadge, ToolBadge, StatusBadge } from './tool-icon';
+import { OriginBadge, PinBadge, ToolBadge, StatusBadge, ArchivedBadge } from './tool-icon';
 import { SimpleMarkdown } from './simple-markdown';
 import { useProgressive } from './use-progressive';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
@@ -482,6 +482,7 @@ export function SessionDetailView({ id }: { id: string }) {
             <PinBadge pinned={session.pinned} />
             <ToolBadge tool={session.tool} />
             <OriginBadge origin={session.origin} />
+            <ArchivedBadge archived={session.archived} />
             <StatusBadge status={session.status} />
             <span className="flex items-center gap-1">
               <MessageSquare size={12} /> {session.messageCount} messages

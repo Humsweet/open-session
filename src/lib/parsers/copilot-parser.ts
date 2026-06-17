@@ -2,26 +2,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-
-function getCopilotSessionDir(): string {
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(home, '.copilot', 'session-state');
-}
+import { copilotRoots } from './session-roots';
 
 export class CopilotParser implements SessionParser {
   async scan(): Promise<UnifiedSession[]> {
-    const sessionDir = getCopilotSessionDir();
-    if (!fs.existsSync(sessionDir)) return [];
-
     const sessions: UnifiedSession[] = [];
-    const folders = fs.readdirSync(sessionDir, { withFileTypes: true });
 
-    for (const folder of folders) {
-      if (!folder.isDirectory()) continue;
-      const eventsPath = path.join(sessionDir, folder.name, 'events.jsonl');
-      if (!fs.existsSync(eventsPath)) continue;
+    for (const { dir: sessionDir, archived } of copilotRoots()) {
+      if (!fs.existsSync(sessionDir)) continue;
+      const folders = fs.readdirSync(sessionDir, { withFileTypes: true });
 
-      try {
+      for (const folder of folders) {
+        if (!folder.isDirectory()) continue;
+        const eventsPath = path.join(sessionDir, folder.name, 'events.jsonl');
+        if (!fs.existsSync(eventsPath)) continue;
+
+        try {
         const fileStat = fs.statSync(eventsPath);
         const cached = getCachedSession(eventsPath, fileStat);
         if (cached) {
@@ -74,6 +70,7 @@ export class CopilotParser implements SessionParser {
           tool: 'copilot-cli',
           status: 'open',
           origin: 'local',
+          archived,
           title,
           cwd,
           createdAt,
@@ -85,7 +82,8 @@ export class CopilotParser implements SessionParser {
         };
         setCachedSession(eventsPath, fileStat, session);
         sessions.push({ ...session });
-      } catch { /* skip */ }
+        } catch { /* skip */ }
+      }
     }
 
     return sessions;
@@ -93,8 +91,13 @@ export class CopilotParser implements SessionParser {
 
   async getDetail(sessionId: string): Promise<SessionDetail | null> {
     const realId = sessionId.replace('copilot-', '');
-    const eventsPath = path.join(getCopilotSessionDir(), realId, 'events.jsonl');
-    if (!fs.existsSync(eventsPath)) return null;
+    // Prefer the live local copy; fall back to the archive when cleaned up locally.
+    let eventsPath = '';
+    for (const { dir } of copilotRoots()) {
+      const candidate = path.join(dir, realId, 'events.jsonl');
+      if (fs.existsSync(candidate)) { eventsPath = candidate; break; }
+    }
+    if (!eventsPath) return null;
 
     const content = fs.readFileSync(eventsPath, 'utf-8');
     const lines = content.split('\n').filter(l => l.trim());

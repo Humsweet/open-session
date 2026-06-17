@@ -2,22 +2,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-
-function getCodexSessionsDir(): string {
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(home, '.codex', 'sessions');
-}
+import { codexRoots } from './session-roots';
 
 export class CodexParser implements SessionParser {
   async scan(): Promise<UnifiedSession[]> {
-    const sessionsDir = getCodexSessionsDir();
-    if (!fs.existsSync(sessionsDir)) return [];
-
     const sessions: UnifiedSession[] = [];
-    const jsonlFiles = this.findJsonlFiles(sessionsDir);
 
-    for (const filePath of jsonlFiles) {
-      try {
+    for (const { dir: sessionsDir, archived } of codexRoots()) {
+      if (!fs.existsSync(sessionsDir)) continue;
+      const jsonlFiles = this.findJsonlFiles(sessionsDir);
+
+      for (const filePath of jsonlFiles) {
+        try {
         const fileStat = fs.statSync(filePath);
         const cached = getCachedSession(filePath, fileStat);
         if (cached) {
@@ -90,6 +86,7 @@ export class CodexParser implements SessionParser {
           tool: 'codex-cli',
           status: 'open',
           origin: 'local',
+          archived,
           originator: originator || undefined,
           title,
           cwd: cwd.replace(/^\\\\\?\\/, ''),
@@ -102,7 +99,8 @@ export class CodexParser implements SessionParser {
         };
         setCachedSession(filePath, fileStat, session);
         sessions.push({ ...session });
-      } catch { /* skip */ }
+        } catch { /* skip */ }
+      }
     }
 
     return sessions;

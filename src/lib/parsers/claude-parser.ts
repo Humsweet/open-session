@@ -2,11 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-
-function getClaudeProjectsDir(): string {
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  return path.join(home, '.claude', 'projects');
-}
+import { claudeRoots } from './session-roots';
 
 function extractMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -140,7 +136,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
 
 /** Build a session's metadata from its already-read JSONL lines. Shared by
  * scan() and getDetail() so neither has to re-scan every other file. */
-function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats): UnifiedSession {
+function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats, archived: boolean): UnifiedSession {
   const sessionId = path.basename(filePath, '.jsonl');
 
   // Single pass: metadata, message count, and first/last user message
@@ -181,6 +177,7 @@ function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats): 
     tool: 'claude-code',
     status: 'open',
     origin: 'local',
+    archived,
     title,
     cwd,
     createdAt,
@@ -194,35 +191,36 @@ function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats): 
 
 export class ClaudeParser implements SessionParser {
   async scan(): Promise<UnifiedSession[]> {
-    const projectsDir = getClaudeProjectsDir();
-    if (!fs.existsSync(projectsDir)) return [];
-
     const sessions: UnifiedSession[] = [];
-    const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true });
 
-    for (const folder of projectFolders) {
-      if (!folder.isDirectory()) continue;
-      const folderPath = path.join(projectsDir, folder.name);
-      const jsonlFiles = fs.readdirSync(folderPath).filter(f => f.endsWith('.jsonl') && !f.includes('subagents'));
+    for (const { dir: projectsDir, archived } of claudeRoots()) {
+      if (!fs.existsSync(projectsDir)) continue;
+      const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true });
 
-      for (const file of jsonlFiles) {
-        const filePath = path.join(folderPath, file);
-        try {
-          const stat = fs.statSync(filePath);
-          const cached = getCachedSession(filePath, stat);
-          if (cached) {
-            sessions.push(cached);
-            continue;
-          }
+      for (const folder of projectFolders) {
+        if (!folder.isDirectory()) continue;
+        const folderPath = path.join(projectsDir, folder.name);
+        const jsonlFiles = fs.readdirSync(folderPath).filter(f => f.endsWith('.jsonl') && !f.includes('subagents'));
 
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n').filter(l => l.trim());
-          if (lines.length === 0) continue;
+        for (const file of jsonlFiles) {
+          const filePath = path.join(folderPath, file);
+          try {
+            const stat = fs.statSync(filePath);
+            const cached = getCachedSession(filePath, stat);
+            if (cached) {
+              sessions.push(cached);
+              continue;
+            }
 
-          const session = buildClaudeSession(filePath, lines, stat);
-          setCachedSession(filePath, stat, session);
-          sessions.push({ ...session });
-        } catch { /* skip broken files */ }
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const lines = content.split('\n').filter(l => l.trim());
+            if (lines.length === 0) continue;
+
+            const session = buildClaudeSession(filePath, lines, stat, archived);
+            setCachedSession(filePath, stat, session);
+            sessions.push({ ...session });
+          } catch { /* skip broken files */ }
+        }
       }
     }
 
@@ -231,29 +229,30 @@ export class ClaudeParser implements SessionParser {
 
   async getDetail(sessionId: string): Promise<SessionDetail | null> {
     const realId = sessionId.replace('claude-', '');
-    const projectsDir = getClaudeProjectsDir();
-    if (!fs.existsSync(projectsDir)) return null;
 
-    const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true });
-    for (const folder of projectFolders) {
-      if (!folder.isDirectory()) continue;
-      const filePath = path.join(projectsDir, folder.name, `${realId}.jsonl`);
-      if (!fs.existsSync(filePath)) continue;
+    for (const { dir: projectsDir, archived } of claudeRoots()) {
+      if (!fs.existsSync(projectsDir)) continue;
+      const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true });
+      for (const folder of projectFolders) {
+        if (!folder.isDirectory()) continue;
+        const filePath = path.join(projectsDir, folder.name, `${realId}.jsonl`);
+        if (!fs.existsSync(filePath)) continue;
 
-      const stat = fs.statSync(filePath);
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const lines = content.split('\n').filter(l => l.trim());
-      const messages = parseMessages(lines);
+        const stat = fs.statSync(filePath);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const lines = content.split('\n').filter(l => l.trim());
+        const messages = parseMessages(lines);
 
-      // Metadata from the cache when fresh, else from the lines we just read —
-      // never re-scan every other session just to label this one.
-      let session = getCachedSession(filePath, stat);
-      if (!session) {
-        session = buildClaudeSession(filePath, lines, stat);
-        setCachedSession(filePath, stat, session);
+        // Metadata from the cache when fresh, else from the lines we just read —
+        // never re-scan every other session just to label this one.
+        let session = getCachedSession(filePath, stat);
+        if (!session) {
+          session = buildClaudeSession(filePath, lines, stat, archived);
+          setCachedSession(filePath, stat, session);
+        }
+
+        return { ...session, messages };
       }
-
-      return { ...session, messages };
     }
     return null;
   }

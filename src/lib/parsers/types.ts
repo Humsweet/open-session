@@ -18,6 +18,11 @@ export interface UnifiedSession {
   pinned?: boolean;
   rawPath: string;
   origin: SessionOrigin;
+  /** True when the copy backing this session lives on the backup/archive root
+   * (external SSD), not the live local source. Set when a session exists only
+   * in the backup (already cleaned up locally) or when the backup copy is the
+   * one chosen during dedup. Drives the "Archived (SSD)" provenance badge. */
+  archived?: boolean;
   /** Where the active search query matched — only set on search API responses */
   matchedIn?: 'title' | 'summary' | 'message' | 'path' | 'transcript';
   originator?: string;
