@@ -8,8 +8,9 @@
     2. 拷到 ~/Library/LaunchAgents/com.hanyuyang.open-session-backup.plist
     3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hanyuyang.open-session-backup.plist
 
-  默认每天 03:00 跑一次(早于多数 CLI 的启动清理时机)。SSD 没挂载时脚本会
-  优雅失败退出(exit 2),不会写坏任何东西,下次挂上再跑即可补齐增量。
+  触发时机:开机/登录(RunAtLoad)+ 任意卷挂载(StartOnMount,SSD 一插上就跑)
+  + 每天 03:00 兜底(StartCalendarInterval)。SSD 没挂载时脚本优雅失败退出(exit 2)
+  并记日志,不写坏任何东西;下次挂上自动跑、rsync --update 增量补齐缺的 session。
 -->
 <plist version="1.0">
 <dict>
@@ -45,7 +46,13 @@
   <key>StandardErrorPath</key>
   <string>__HOME__/Library/Logs/open-session-backup.log</string>
 
+  <!-- 开机/登录即跑一次 -->
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
+
+  <!-- 任意卷挂载即触发:外置 SSD 一插上就自动跑,rsync 增量天然补差;
+       非目标卷挂载时脚本检测路径不在→exit 2 记日志,无害 -->
+  <key>StartOnMount</key>
+  <true/>
 </dict>
 </plist>
