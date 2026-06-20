@@ -3,6 +3,7 @@ import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
 import { codexRoots } from './session-roots';
+import { safeReaddirDirents } from './safe-fs';
 
 export class CodexParser implements SessionParser {
   async scan(): Promise<UnifiedSession[]> {
@@ -108,7 +109,7 @@ export class CodexParser implements SessionParser {
 
   private findJsonlFiles(dir: string): string[] {
     const results: string[] = [];
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const entries = safeReaddirDirents(dir);
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {

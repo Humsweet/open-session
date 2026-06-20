@@ -3,6 +3,7 @@ import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
 import { copilotRoots } from './session-roots';
+import { safeReaddirDirents } from './safe-fs';
 
 export class CopilotParser implements SessionParser {
   async scan(): Promise<UnifiedSession[]> {
@@ -10,7 +11,7 @@ export class CopilotParser implements SessionParser {
 
     for (const { dir: sessionDir, archived } of copilotRoots()) {
       if (!fs.existsSync(sessionDir)) continue;
-      const folders = fs.readdirSync(sessionDir, { withFileTypes: true });
+      const folders = safeReaddirDirents(sessionDir);
 
       for (const folder of folders) {
         if (!folder.isDirectory()) continue;

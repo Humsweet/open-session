@@ -3,6 +3,7 @@ import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
 import { claudeRoots } from './session-roots';
+import { safeReaddir, safeReaddirDirents } from './safe-fs';
 
 function extractMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -195,12 +196,12 @@ export class ClaudeParser implements SessionParser {
 
     for (const { dir: projectsDir, archived } of claudeRoots()) {
       if (!fs.existsSync(projectsDir)) continue;
-      const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true });
+      const projectFolders = safeReaddirDirents(projectsDir);
 
       for (const folder of projectFolders) {
         if (!folder.isDirectory()) continue;
         const folderPath = path.join(projectsDir, folder.name);
-        const jsonlFiles = fs.readdirSync(folderPath).filter(f => f.endsWith('.jsonl') && !f.includes('subagents'));
+        const jsonlFiles = safeReaddir(folderPath).filter(f => f.endsWith('.jsonl') && !f.includes('subagents'));
 
         for (const file of jsonlFiles) {
           const filePath = path.join(folderPath, file);
@@ -232,7 +233,7 @@ export class ClaudeParser implements SessionParser {
 
     for (const { dir: projectsDir, archived } of claudeRoots()) {
       if (!fs.existsSync(projectsDir)) continue;
-      const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true });
+      const projectFolders = safeReaddirDirents(projectsDir);
       for (const folder of projectFolders) {
         if (!folder.isDirectory()) continue;
         const filePath = path.join(projectsDir, folder.name, `${realId}.jsonl`);

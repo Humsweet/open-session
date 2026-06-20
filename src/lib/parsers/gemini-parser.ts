@@ -3,6 +3,7 @@ import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
 import { geminiConversationRoots, geminiTmpRoots } from './session-roots';
+import { safeReaddir, safeReaddirDirents } from './safe-fs';
 
 interface GeminiMessage {
   id?: string;
@@ -38,7 +39,7 @@ export class GeminiParser implements SessionParser {
 
     for (const { dir: tmpDir, archived } of geminiTmpRoots()) {
       if (!fs.existsSync(tmpDir)) continue;
-      const projectDirs = fs.readdirSync(tmpDir, { withFileTypes: true });
+      const projectDirs = safeReaddirDirents(tmpDir);
 
       for (const dir of projectDirs) {
         if (!dir.isDirectory()) continue;
@@ -52,7 +53,7 @@ export class GeminiParser implements SessionParser {
           cwd = fs.readFileSync(projectRootFile, 'utf-8').trim();
         }
 
-        const chatFiles = fs.readdirSync(chatsDir).filter(f => f.startsWith('session-') && f.endsWith('.json'));
+        const chatFiles = safeReaddir(chatsDir).filter(f => f.startsWith('session-') && f.endsWith('.json'));
 
         for (const file of chatFiles) {
           const filePath = path.join(chatsDir, file);
@@ -108,7 +109,7 @@ export class GeminiParser implements SessionParser {
 
     for (const { dir: convDir, archived } of geminiConversationRoots()) {
       if (!fs.existsSync(convDir)) continue;
-      const files = fs.readdirSync(convDir).filter(f => f.endsWith('.pb'));
+      const files = safeReaddir(convDir).filter(f => f.endsWith('.pb'));
 
       for (const file of files) {
         const filePath = path.join(convDir, file);
@@ -164,13 +165,13 @@ export class GeminiParser implements SessionParser {
 
     for (const { dir: tmpDir, archived } of geminiTmpRoots()) {
       if (!fs.existsSync(tmpDir)) continue;
-      const projectDirs = fs.readdirSync(tmpDir, { withFileTypes: true });
+      const projectDirs = safeReaddirDirents(tmpDir);
       for (const dir of projectDirs) {
         if (!dir.isDirectory()) continue;
         const chatsDir = path.join(tmpDir, dir.name, 'chats');
         if (!fs.existsSync(chatsDir)) continue;
 
-        const chatFiles = fs.readdirSync(chatsDir).filter(f => f.startsWith('session-') && f.endsWith('.json'));
+        const chatFiles = safeReaddir(chatsDir).filter(f => f.startsWith('session-') && f.endsWith('.json'));
         for (const file of chatFiles) {
           const filePath = path.join(chatsDir, file);
           try {
