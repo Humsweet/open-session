@@ -22,6 +22,7 @@ const extendedStatuses: { value: SessionStatus | 'all'; label: string }[] = [
 const origins: { value: SessionOrigin | 'all'; label: string }[] = [
   { value: 'local', label: 'Local' },
   { value: 'slack-bot', label: 'Slack Bot' },
+  { value: 'i2m', label: 'i2m' },
   { value: 'all', label: 'All' },
 ];
 
@@ -62,6 +63,13 @@ function getSourceButtonStyle(activeOrigin: SessionOrigin | 'all', value: Sessio
     return {
       backgroundColor: 'var(--slack-subtle)',
       color: 'var(--slack)',
+    };
+  }
+
+  if (value === 'i2m') {
+    return {
+      backgroundColor: 'var(--i2m-subtle)',
+      color: 'var(--i2m)',
     };
   }
 

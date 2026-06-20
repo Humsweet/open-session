@@ -1,6 +1,6 @@
 export type ToolType = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
 export type SessionStatus = 'open' | 'closed' | 'dropped';
-export type SessionOrigin = 'local' | 'slack-bot';
+export type SessionOrigin = 'local' | 'slack-bot' | 'i2m';
 
 export interface UnifiedSession {
   id: string;

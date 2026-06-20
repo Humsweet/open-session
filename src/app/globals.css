@@ -27,6 +27,8 @@
   --thinking-border: rgba(92, 89, 128, 0.25);
   --slack: #611f69;
   --slack-subtle: rgba(97, 31, 105, 0.12);
+  --i2m: #156f6a;
+  --i2m-subtle: rgba(21, 111, 106, 0.12);
 }
 
 @theme inline {

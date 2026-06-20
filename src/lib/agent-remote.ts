@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { SessionDetail, ToolType, UnifiedSession } from './parsers/types';
+import { SessionDetail, SessionOrigin, ToolType, UnifiedSession } from './parsers/types';
 
 const AGENT_REMOTE_DB_PATH = path.join(os.homedir(), '.agent-remote', 'sessions.db');
 
@@ -71,6 +71,31 @@ function getAgentSource(tool: ToolType, usageAgentType?: string | null): string 
 
 function getRealSessionId(sessionId: string): string {
   return sessionId.replace(/^(claude|copilot|codex|gemini)-/, '');
+}
+
+/**
+ * Repo folder name for the GrokStuff project, which gets its own "i2m" tab.
+ * Matched by folder name (not absolute path) so the same rule works on both the
+ * macOS and Windows checkouts. This single cwd rule also covers the GrokStuff
+ * background harness (`.auto/process.sh`), which `cd`s into the repo before
+ * invoking `claude` — so script-spawned and interactive sessions both land here.
+ */
+const I2M_PROJECT_DIR = 'GrokStuff';
+
+function isI2mProject(cwd: string | undefined | null): boolean {
+  if (!cwd) return false;
+  const norm = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
+  return (
+    norm === I2M_PROJECT_DIR ||
+    norm.endsWith('/' + I2M_PROJECT_DIR) ||
+    norm.includes('/' + I2M_PROJECT_DIR + '/')
+  );
+}
+
+/** Origin for a session that isn't a slack-bot session: i2m if it lives in the
+ * GrokStuff repo, otherwise the plain local list. */
+function localOrigin(cwd: string): SessionOrigin {
+  return isI2mProject(cwd) ? 'i2m' : 'local';
 }
 
 function hasSessionIdsTable(db: Database.Database): boolean {
@@ -162,12 +187,12 @@ function getAgentRemoteInfo(
 export function enrichSessionsWithAgentRemote<T extends UnifiedSession>(sessions: T[]): T[] {
   const db = getAgentRemoteDb();
   if (!db) {
-    return sessions.map(session => ({ ...session, origin: session.origin || 'local' }));
+    return sessions.map(session => ({ ...session, origin: localOrigin(session.cwd) }));
   }
 
   const sessionIdLookup = buildSessionIdLookup(db);
   if (sessionIdLookup.size === 0) {
-    return sessions.map(session => ({ ...session, origin: session.origin || 'local' }));
+    return sessions.map(session => ({ ...session, origin: localOrigin(session.cwd) }));
   }
 
   const channelLookup = buildChannelLookup(db);
@@ -183,7 +208,7 @@ export function enrichSessionsWithAgentRemote<T extends UnifiedSession>(sessions
           agentSource: getAgentSource(session.tool),
         };
       }
-      return { ...session, origin: 'local' };
+      return { ...session, origin: localOrigin(session.cwd) };
     }
 
     return {
@@ -197,14 +222,14 @@ export function enrichSessionsWithAgentRemote<T extends UnifiedSession>(sessions
 export function enrichSessionDetailWithAgentRemote<T extends SessionDetail>(session: T): T {
   const db = getAgentRemoteDb();
   if (!db) {
-    return { ...session, origin: 'local' };
+    return { ...session, origin: localOrigin(session.cwd) };
   }
 
   const sessionIdLookup = buildSessionIdLookup(db);
   const channelLookup = buildChannelLookup(db);
   const info = getAgentRemoteInfo(session, sessionIdLookup, channelLookup);
   if (!info) {
-    return { ...session, origin: 'local' };
+    return { ...session, origin: localOrigin(session.cwd) };
   }
 
   return {

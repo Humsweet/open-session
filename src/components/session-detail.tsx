@@ -610,7 +610,7 @@ export function SessionDetailView({ id }: { id: string }) {
           <div className="flex items-start justify-between gap-3">
             <span style={{ color: 'var(--text-tertiary)' }}>Origin</span>
             <span style={{ color: 'var(--text-primary)' }}>
-              {session.origin === 'slack-bot' ? 'Slack Bot' : 'Local'}
+              {session.origin === 'slack-bot' ? 'Slack Bot' : session.origin === 'i2m' ? 'i2m' : 'Local'}
             </span>
           </div>
           {session.agentSource && (

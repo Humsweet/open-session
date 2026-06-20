@@ -1,7 +1,8 @@
 'use client';
 
 import { ToolType } from '@/lib/parsers/types';
-import { Terminal, Cpu, Sparkles, Bot, MessageSquare, Pin, Archive } from 'lucide-react';
+import { Terminal, Cpu, Sparkles, Bot, MessageSquare, Image as ImageIcon, Pin, Archive } from 'lucide-react';
+import { SessionOrigin } from '@/lib/parsers/types';
 
 const toolConfig: Record<ToolType, { label: string; color: string; icon: typeof Terminal }> = {
   'claude-code': { label: 'Claude', color: '#92400e', icon: Terminal },
@@ -53,21 +54,38 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function OriginBadge({ origin }: { origin: 'local' | 'slack-bot' }) {
-  if (origin !== 'slack-bot') return null;
+export function OriginBadge({ origin }: { origin: SessionOrigin }) {
+  if (origin === 'slack-bot') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+        style={{
+          backgroundColor: 'var(--slack-subtle)',
+          color: 'var(--slack)',
+        }}
+      >
+        <MessageSquare size={12} />
+        Slack Bot
+      </span>
+    );
+  }
 
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
-      style={{
-        backgroundColor: 'var(--slack-subtle)',
-        color: 'var(--slack)',
-      }}
-    >
-      <MessageSquare size={12} />
-      Slack Bot
-    </span>
-  );
+  if (origin === 'i2m') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+        style={{
+          backgroundColor: 'var(--i2m-subtle)',
+          color: 'var(--i2m)',
+        }}
+      >
+        <ImageIcon size={12} />
+        i2m
+      </span>
+    );
+  }
+
+  return null;
 }
 
 export function ArchivedBadge({ archived }: { archived?: boolean }) {
