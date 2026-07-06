@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-import { claudeRoots } from './session-roots';
+import { claudeRoots, selectRoots, HostFilter } from './session-roots';
 import { safeReaddir, safeReaddirDirents } from './safe-fs';
 
 function extractMessageText(content: unknown): string {
@@ -137,7 +137,7 @@ function parseMessages(lines: string[]): SessionMessage[] {
 
 /** Build a session's metadata from its already-read JSONL lines. Shared by
  * scan() and getDetail() so neither has to re-scan every other file. */
-function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats, archived: boolean): UnifiedSession {
+function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats, archived: boolean, host?: string): UnifiedSession {
   const sessionId = path.basename(filePath, '.jsonl');
 
   // Single pass: metadata, message count, and first/last user message
@@ -179,6 +179,7 @@ function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats, a
     status: 'open',
     origin: 'local',
     archived,
+    host,
     title,
     cwd,
     createdAt,
@@ -191,10 +192,10 @@ function buildClaudeSession(filePath: string, lines: string[], stat: fs.Stats, a
 }
 
 export class ClaudeParser implements SessionParser {
-  async scan(): Promise<UnifiedSession[]> {
+  async scan(hostFilter: HostFilter = 'all', includeArchived = true): Promise<UnifiedSession[]> {
     const sessions: UnifiedSession[] = [];
 
-    for (const { dir: projectsDir, archived } of claudeRoots()) {
+    for (const { dir: projectsDir, archived, host } of selectRoots(claudeRoots(), hostFilter, includeArchived)) {
       if (!fs.existsSync(projectsDir)) continue;
       const projectFolders = safeReaddirDirents(projectsDir);
 
@@ -217,7 +218,7 @@ export class ClaudeParser implements SessionParser {
             const lines = content.split('\n').filter(l => l.trim());
             if (lines.length === 0) continue;
 
-            const session = buildClaudeSession(filePath, lines, stat, archived);
+            const session = buildClaudeSession(filePath, lines, stat, archived, host);
             setCachedSession(filePath, stat, session);
             sessions.push({ ...session });
           } catch { /* skip broken files */ }
@@ -231,7 +232,7 @@ export class ClaudeParser implements SessionParser {
   async getDetail(sessionId: string): Promise<SessionDetail | null> {
     const realId = sessionId.replace('claude-', '');
 
-    for (const { dir: projectsDir, archived } of claudeRoots()) {
+    for (const { dir: projectsDir, archived, host } of claudeRoots()) {
       if (!fs.existsSync(projectsDir)) continue;
       const projectFolders = safeReaddirDirents(projectsDir);
       for (const folder of projectFolders) {
@@ -248,7 +249,7 @@ export class ClaudeParser implements SessionParser {
         // never re-scan every other session just to label this one.
         let session = getCachedSession(filePath, stat);
         if (!session) {
-          session = buildClaudeSession(filePath, lines, stat, archived);
+          session = buildClaudeSession(filePath, lines, stat, archived, host);
           setCachedSession(filePath, stat, session);
         }
 

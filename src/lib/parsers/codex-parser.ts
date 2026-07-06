@@ -2,14 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-import { codexRoots } from './session-roots';
+import { codexRoots, selectRoots, HostFilter } from './session-roots';
 import { safeReaddirDirents } from './safe-fs';
 
 export class CodexParser implements SessionParser {
-  async scan(): Promise<UnifiedSession[]> {
+  async scan(hostFilter: HostFilter = 'all', includeArchived = true): Promise<UnifiedSession[]> {
     const sessions: UnifiedSession[] = [];
 
-    for (const { dir: sessionsDir, archived } of codexRoots()) {
+    for (const { dir: sessionsDir, archived, host } of selectRoots(codexRoots(), hostFilter, includeArchived)) {
       if (!fs.existsSync(sessionsDir)) continue;
       const jsonlFiles = this.findJsonlFiles(sessionsDir);
 
@@ -88,6 +88,7 @@ export class CodexParser implements SessionParser {
           status: 'open',
           origin: 'local',
           archived,
+          host,
           originator: originator || undefined,
           title,
           cwd: cwd.replace(/^\\\\\?\\/, ''),

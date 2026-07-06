@@ -1,8 +1,13 @@
 import { scanAllSessions, ToolType } from '@/lib/parsers';
 import { getDb } from '@/lib/db/client';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
+import { HostFilter } from '@/lib/parsers/session-roots';
 import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
+
+// Re-exported so existing importers (e.g. the /api/sessions route) keep a stable
+// path; the canonical definition lives in parsers/session-roots.ts alongside host.
+export type { HostFilter };
 
 export function parseAsUtc(s: string): number {
   // SQLite datetime('now') produces "YYYY-MM-DD HH:MM:SS" without timezone —
@@ -33,9 +38,15 @@ function hasSessionActivitySinceStatusChange(sessionUpdatedAt: string, statusUpd
  * of "open" never drifts apart. Side effects (force-close summary-helper
  * sessions, auto-reopen sessions with activity after a manual close) are
  * idempotent, so calling this from multiple endpoints is safe.
+ *
+ * `host` filters by which machine the session came from — defaults to 'local'
+ * so the main list is unaffected by any mac-mini mirror; the daily digest passes
+ * 'all' (or 'mac-mini') to reach the mirrored sessions.
  */
-export async function loadMergedSessions(toolFilter?: ToolType): Promise<UnifiedSession[]> {
-  const scanned = await scanAllSessions(toolFilter);
+export async function loadMergedSessions(toolFilter?: ToolType, host: HostFilter = 'local'): Promise<UnifiedSession[]> {
+  // Host selection happens at root level inside the scan (mac-mini roots aren't
+  // even opened for a 'local' scan), so there is no post-scan discard here.
+  const scanned = await scanAllSessions(toolFilter, host);
 
   const summaryHelperIds = scanned.filter(isSummaryHelperSession).map(session => session.id);
   if (summaryHelperIds.length > 0) {

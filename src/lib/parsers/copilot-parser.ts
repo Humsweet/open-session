@@ -2,14 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-import { copilotRoots } from './session-roots';
+import { copilotRoots, selectRoots, HostFilter } from './session-roots';
 import { safeReaddirDirents } from './safe-fs';
 
 export class CopilotParser implements SessionParser {
-  async scan(): Promise<UnifiedSession[]> {
+  async scan(hostFilter: HostFilter = 'all', includeArchived = true): Promise<UnifiedSession[]> {
     const sessions: UnifiedSession[] = [];
 
-    for (const { dir: sessionDir, archived } of copilotRoots()) {
+    for (const { dir: sessionDir, archived, host } of selectRoots(copilotRoots(), hostFilter, includeArchived)) {
       if (!fs.existsSync(sessionDir)) continue;
       const folders = safeReaddirDirents(sessionDir);
 
@@ -72,6 +72,7 @@ export class CopilotParser implements SessionParser {
           status: 'open',
           origin: 'local',
           archived,
+          host,
           title,
           cwd,
           createdAt,

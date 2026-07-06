@@ -82,7 +82,7 @@ function getRealSessionId(sessionId: string): string {
  */
 const I2M_PROJECT_DIR = 'GrokStuff';
 
-function isI2mProject(cwd: string | undefined | null): boolean {
+export function isI2mProject(cwd: string | undefined | null): boolean {
   if (!cwd) return false;
   const norm = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
   return (

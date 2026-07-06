@@ -74,6 +74,33 @@ export function flushScanCache(): void {
   } catch { /* DB write failed — in-memory cache still serves this process */ }
 }
 
+/**
+ * Read every cached session straight from the SQLite `scan_cache` table WITHOUT
+ * stat-ing any file. Orders of magnitude faster than a real scan when tens of
+ * thousands of files live on an external SSD, at the cost of freshness: a file
+ * created since the last real scan won't appear. Use only for cheap read-only
+ * views (e.g. the digest scheduler's status/horizon) where staleness is fine and
+ * a real scan runs elsewhere; never as the source for generating a digest.
+ * NOTE: `origin` here is the raw parser value (pre agent-remote enrichment), so
+ * i2m must be detected from cwd by the caller if needed.
+ */
+export function readAllCachedSessions(): UnifiedSession[] {
+  try {
+    const rows = getDb()
+      .prepare('SELECT session_json FROM scan_cache')
+      .all() as Array<{ session_json: string }>;
+    const out: UnifiedSession[] = [];
+    for (const row of rows) {
+      try {
+        out.push(JSON.parse(row.session_json) as UnifiedSession);
+      } catch { /* skip corrupt row */ }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function getCachedSession(filePath: string, stat: fs.Stats): UnifiedSession | null {
   ensureHydrated();
   const entry = sessionCache.get(filePath);

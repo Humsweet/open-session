@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard,
+  CalendarDays,
   Settings,
   Zap,
   Folder,
@@ -16,6 +17,7 @@ import {
 
 const navItems = [
   { href: '/', label: 'Sessions', icon: LayoutDashboard },
+  { href: '/daily', label: 'Daily', icon: CalendarDays },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

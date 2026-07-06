@@ -59,6 +59,33 @@ function initSchema(db: Database.Database) {
       file_key TEXT NOT NULL,
       session_json TEXT NOT NULL
     );
+
+    -- One row per day: the classified/ranked daily work digest. items_json is a
+    -- DigestItem[]; coverage_json records per-source capture state so a day whose
+    -- mac-mini data wasn't reachable is stored as 'partial' (never falsely
+    -- 'complete') and completed on a later run. See src/lib/daily-digest.
+    CREATE TABLE IF NOT EXISTS daily_digest (
+      date TEXT PRIMARY KEY,
+      headline TEXT NOT NULL DEFAULT '',
+      items_json TEXT NOT NULL DEFAULT '[]',
+      coverage_json TEXT NOT NULL DEFAULT '{}',
+      session_count INTEGER NOT NULL DEFAULT 0,
+      model TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'empty',
+      generated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    -- Per-session factual condensation cache, keyed by session id. file_key is
+    -- "mtimeMs:size" (same scheme as scan_cache): a growing/edited transcript
+    -- invalidates its blurb so it is re-condensed, and nothing else is. Makes
+    -- digest (re)generation idempotent and cheap on tokens.
+    CREATE TABLE IF NOT EXISTS digest_session_cache (
+      session_id TEXT PRIMARY KEY,
+      file_key TEXT NOT NULL,
+      blurb TEXT NOT NULL,
+      model TEXT NOT NULL DEFAULT ''
+    );
   `);
 
   const columns = db.prepare("PRAGMA table_info(session_state)").all() as Array<{ name: string }>;
@@ -101,4 +128,17 @@ function initSchema(db: Database.Database) {
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
   );
   insertSetting.run('summary_cli', 'claude-code');
+  // Model used for the daily work digest (per-session condensation + day rollup).
+  // Defaults to opus while the value principles are being tuned; switch to
+  // 'sonnet' etc. from the settings page once they stabilize. Accepts a CLI
+  // alias ('opus'/'sonnet'/'haiku') or a full model id.
+  insertSetting.run('digest_model', 'opus');
+}
+
+/** Read a settings value, falling back to the given default when unset. */
+export function getSetting(key: string, fallback: string): string {
+  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? fallback;
 }

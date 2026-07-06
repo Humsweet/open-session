@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedSession, SessionDetail, SessionMessage, SessionParser } from './types';
 import { getCachedSession, setCachedSession } from './scan-cache';
-import { geminiConversationRoots, geminiTmpRoots } from './session-roots';
+import { geminiConversationRoots, geminiTmpRoots, selectRoots, HostFilter } from './session-roots';
 import { safeReaddir, safeReaddirDirents } from './safe-fs';
 
 interface GeminiMessage {
@@ -22,22 +22,22 @@ interface GeminiSessionJson {
 }
 
 export class GeminiParser implements SessionParser {
-  async scan(): Promise<UnifiedSession[]> {
+  async scan(hostFilter: HostFilter = 'all', includeArchived = true): Promise<UnifiedSession[]> {
     const sessions: UnifiedSession[] = [];
 
     // Scan new JSON format: ~/.gemini/tmp/<project>/chats/session-*.json
-    sessions.push(...this.scanJsonSessions());
+    sessions.push(...this.scanJsonSessions(hostFilter, includeArchived));
 
     // Scan old protobuf format: ~/.gemini/antigravity/conversations/*.pb
-    sessions.push(...this.scanPbSessions());
+    sessions.push(...this.scanPbSessions(hostFilter, includeArchived));
 
     return sessions;
   }
 
-  private scanJsonSessions(): UnifiedSession[] {
+  private scanJsonSessions(hostFilter: HostFilter, includeArchived: boolean): UnifiedSession[] {
     const sessions: UnifiedSession[] = [];
 
-    for (const { dir: tmpDir, archived } of geminiTmpRoots()) {
+    for (const { dir: tmpDir, archived, host } of selectRoots(geminiTmpRoots(), hostFilter, includeArchived)) {
       if (!fs.existsSync(tmpDir)) continue;
       const projectDirs = safeReaddirDirents(tmpDir);
 
@@ -85,6 +85,7 @@ export class GeminiParser implements SessionParser {
             status: 'open',
             origin: 'local',
             archived,
+            host,
             title,
             cwd,
             createdAt: data.startTime,
@@ -104,10 +105,10 @@ export class GeminiParser implements SessionParser {
     return sessions;
   }
 
-  private scanPbSessions(): UnifiedSession[] {
+  private scanPbSessions(hostFilter: HostFilter, includeArchived: boolean): UnifiedSession[] {
     const sessions: UnifiedSession[] = [];
 
-    for (const { dir: convDir, archived } of geminiConversationRoots()) {
+    for (const { dir: convDir, archived, host } of selectRoots(geminiConversationRoots(), hostFilter, includeArchived)) {
       if (!fs.existsSync(convDir)) continue;
       const files = safeReaddir(convDir).filter(f => f.endsWith('.pb'));
 
@@ -123,6 +124,7 @@ export class GeminiParser implements SessionParser {
             status: 'open',
             origin: 'local',
             archived,
+            host,
             title: `Gemini Session ${sessionId.slice(0, 8)}`,
             cwd: '',
             createdAt: stat.birthtime.toISOString(),
@@ -163,7 +165,7 @@ export class GeminiParser implements SessionParser {
   private getJsonDetail(sessionId: string): SessionDetail | null {
     const realId = sessionId.replace('gemini-', '');
 
-    for (const { dir: tmpDir, archived } of geminiTmpRoots()) {
+    for (const { dir: tmpDir, archived, host } of geminiTmpRoots()) {
       if (!fs.existsSync(tmpDir)) continue;
       const projectDirs = safeReaddirDirents(tmpDir);
       for (const dir of projectDirs) {
@@ -212,6 +214,7 @@ export class GeminiParser implements SessionParser {
               status: 'open',
               origin: 'local',
               archived,
+              host,
               title: firstUserText.slice(0, 80) || `Gemini Session ${data.sessionId.slice(0, 8)}`,
               cwd,
               createdAt: data.startTime,
@@ -232,7 +235,7 @@ export class GeminiParser implements SessionParser {
   private getPbDetail(sessionId: string): SessionDetail | null {
     const realId = sessionId.replace('gemini-pb-', '');
 
-    for (const { dir: convDir, archived } of geminiConversationRoots()) {
+    for (const { dir: convDir, archived, host } of geminiConversationRoots()) {
       const filePath = path.join(convDir, `${realId}.pb`);
       if (!fs.existsSync(filePath)) continue;
 
@@ -251,6 +254,7 @@ export class GeminiParser implements SessionParser {
         status: 'open',
         origin: 'local',
         archived,
+        host,
         title: `Gemini Session ${realId.slice(0, 8)}`,
         cwd: '',
         createdAt: stat.birthtime.toISOString(),

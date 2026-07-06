@@ -3,6 +3,7 @@ import { CopilotParser } from './copilot-parser';
 import { CodexParser } from './codex-parser';
 import { GeminiParser } from './gemini-parser';
 import { UnifiedSession, SessionDetail, ToolType } from './types';
+import { HostFilter } from './session-roots';
 import { enrichSessionDetailWithAgentRemote, enrichSessionsWithAgentRemote } from '../agent-remote';
 
 const parsers = {
@@ -37,10 +38,14 @@ function pickPreferredSession(current: UnifiedSession | undefined, candidate: Un
   return current;
 }
 
-export async function scanAllSessions(toolFilter?: ToolType): Promise<UnifiedSession[]> {
+export async function scanAllSessions(
+  toolFilter?: ToolType,
+  hostFilter: HostFilter = 'all',
+  includeArchived = true
+): Promise<UnifiedSession[]> {
   const tools = toolFilter ? [toolFilter] : Object.keys(parsers) as ToolType[];
   const results = await Promise.all(
-    tools.map(tool => parsers[tool].scan().catch(() => [] as UnifiedSession[]))
+    tools.map(tool => parsers[tool].scan(hostFilter, includeArchived).catch(() => [] as UnifiedSession[]))
   );
 
   const deduped = new Map<string, UnifiedSession>();

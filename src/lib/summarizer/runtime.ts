@@ -23,6 +23,32 @@ interface RuntimeOptions {
 
 const isWindows = process.platform === 'win32';
 
+/**
+ * The CLI binaries (claude/copilot/gemini/codex) install into user-local bin
+ * dirs that a launchd/systemd-launched server does NOT have on its minimal PATH
+ * (e.g. `claude` lives in ~/.local/bin, PATH is just /usr/bin:/bin) — so a bare
+ * spawn('claude') throws ENOENT under the daemon even though it works in a login
+ * shell. Prepend the common install locations to the child's PATH so CLI
+ * resolution no longer depends on how the server happened to be started. This is
+ * the single place all CLI spawns get their environment.
+ */
+function cliEnv(): NodeJS.ProcessEnv {
+  if (isWindows) return process.env;
+  const home = process.env.HOME || '';
+  const extraDirs = [
+    `${home}/.local/bin`,
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    `${home}/.bun/bin`,
+  ];
+  const current = process.env.PATH || '';
+  const merged = [...extraDirs, ...current.split(':')].filter(Boolean);
+  // De-dup while preserving order.
+  const seen = new Set<string>();
+  const path = merged.filter(p => (seen.has(p) ? false : (seen.add(p), true))).join(':');
+  return { ...process.env, PATH: path };
+}
+
 // The prompt is always delivered via stdin, never on the command line, so the
 // argv only ever contains fixed tokens (flags, model names, temp paths). This
 // sidesteps shell quoting entirely — POSIX quoting breaks cmd.exe and vice
@@ -36,14 +62,14 @@ function spawnCli(command: string, args: string[]): ChildProcess {
     return spawn(commandLine, {
       shell: true,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: cliEnv(),
       windowsHide: true,
     });
   }
 
   return spawn(command, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: process.env,
+    env: cliEnv(),
     windowsHide: true,
   });
 }
@@ -130,7 +156,10 @@ function runCliWithStdin(
         finish();
         return;
       }
-      finish(new Error(stderr.trim() || `${command} exited with code ${code ?? 'unknown'}`));
+      // claude -p often writes its error to stdout, not stderr — surface whichever
+      // has content (tail-capped) so a non-zero exit is actually diagnosable.
+      const detail = (stderr.trim() || stdout.trim()).slice(-600);
+      finish(new Error(`${command} exited with code ${code ?? 'unknown'}${detail ? `: ${detail}` : ''}`));
     });
 
     // EPIPE if the process exits before consuming stdin — 'close' reports the real error.
@@ -292,4 +321,30 @@ export async function runSummaryEngine(
   }
 
   return runShellEngine(engine, prompt, options);
+}
+
+/**
+ * Run a single Claude prompt via `claude -p` with an explicit model, delivering
+ * the prompt on stdin (same quoting-safe path as the summary engines).
+ *
+ * Separate from runSummaryEngine because the daily digest needs a *configurable*
+ * model (default opus, switchable to sonnet later) rather than the fixed haiku
+ * baked into SUMMARY_MODELS['claude-code']. `model` accepts a CLI alias
+ * ('opus' / 'sonnet' / 'haiku') or a full model id.
+ */
+export async function runClaudeText(
+  prompt: string,
+  model: string,
+  timeoutMs = 120000
+): Promise<string> {
+  const { stdout, stderr } = await runCliWithStdin(
+    'claude',
+    ['-p', '--output-format', 'text', '--model', model],
+    prompt,
+    timeoutMs
+  );
+  if (stderr && !stdout) {
+    throw new Error(stderr);
+  }
+  return stdout.trim();
 }

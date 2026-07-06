@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Terminal, Cpu, Bot, Sparkles } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Terminal, Cpu, Bot, Sparkles, CalendarDays } from 'lucide-react';
 
 type SummaryCli = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
 
@@ -12,8 +12,27 @@ const cliOptions: { value: SummaryCli; label: string; icon: typeof Terminal }[] 
   { value: 'gemini-cli', label: 'Gemini CLI (Gemini 2.5 Flash-Lite)', icon: Bot },
 ];
 
+// 日报模型：默认 opus（原则调优期），稳定后可降 sonnet/haiku 省 token。
+const digestModelOptions: { value: string; label: string }[] = [
+  { value: 'opus', label: 'Opus（最强，制定/调优原则期用）' },
+  { value: 'sonnet', label: 'Sonnet（均衡，原则稳定后）' },
+  { value: 'haiku', label: 'Haiku（最省，量大时）' },
+];
+
+interface DigestStatus {
+  horizon: string;
+  yesterday: string;
+  totalDays: number;
+  doneDays: number;
+  partialDays: number;
+  pendingDays: number;
+  lastRun: string | null;
+}
+
 export default function SettingsPage() {
   const [summaryCli, setSummaryCli] = useState<SummaryCli>('claude-code');
+  const [digestModel, setDigestModel] = useState<string>('opus');
+  const [status, setStatus] = useState<DigestStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -22,8 +41,13 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(data => {
         if (data.summary_cli) setSummaryCli(data.summary_cli);
+        if (data.digest_model) setDigestModel(data.digest_model);
       })
       .catch(console.error);
+    fetch('/api/daily/reconcile')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => d && !d.error && setStatus(d))
+      .catch(() => {});
   }, []);
 
   const save = async () => {
@@ -32,7 +56,7 @@ export default function SettingsPage() {
       await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary_cli: summaryCli }),
+        body: JSON.stringify({ summary_cli: summaryCli, digest_model: digestModel }),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -42,6 +66,8 @@ export default function SettingsPage() {
       setSaving(false);
     }
   };
+
+  const isKnownModel = digestModelOptions.some(o => o.value === digestModel);
 
   return (
     <div className="p-6 max-w-2xl">
@@ -88,6 +114,68 @@ export default function SettingsPage() {
             );
           })}
         </div>
+      </div>
+
+      {/* Daily Digest */}
+      <div className="rounded-lg border p-4 mb-4" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
+        <h2 className="text-[13px] font-medium mb-1 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+          <CalendarDays size={14} /> 每日工作总结 (Daily Digest)
+        </h2>
+        <p className="text-[12px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
+          按价值原则对每天用 AI agent 完成的工作归类分级排序（含 mac-mini）。生成模型如下——制定/调优原则期建议用 Opus，原则稳定后可降级省 token。
+        </p>
+
+        <div className="space-y-1.5 mb-3">
+          {digestModelOptions.map(option => {
+            const isSelected = digestModel === option.value;
+            return (
+              <button
+                key={option.value}
+                onClick={() => setDigestModel(option.value)}
+                className="flex items-center gap-3 w-full p-2.5 rounded-md border text-[13px] text-left transition-colors"
+                style={{
+                  backgroundColor: isSelected ? 'var(--accent-subtle)' : 'var(--bg-tertiary)',
+                  borderColor: isSelected ? 'var(--accent)' : 'var(--border-subtle)',
+                  color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                }}
+              >
+                <span className="font-medium">{option.label}</span>
+                {isSelected && (
+                  <span className="ml-auto text-[11px] font-medium" style={{ color: 'var(--accent)' }}>
+                    Selected
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {!isKnownModel && (
+            <div className="text-[11px] px-1" style={{ color: 'var(--text-tertiary)' }}>
+              当前值：<code>{digestModel}</code>（自定义模型 id）
+            </div>
+          )}
+        </div>
+
+        {status && (
+          <div className="rounded-md p-3 text-[12px]" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+            <div className="flex justify-between py-0.5">
+              <span style={{ color: 'var(--text-tertiary)' }}>回填地平线</span>
+              <span className="tabular-nums">{status.horizon} → {status.yesterday}</span>
+            </div>
+            <div className="flex justify-between py-0.5">
+              <span style={{ color: 'var(--text-tertiary)' }}>已完成 / 总天数</span>
+              <span className="tabular-nums">
+                {status.doneDays} / {status.totalDays}
+                {status.partialDays > 0 && (
+                  <span style={{ color: 'var(--warning)' }}> · {status.partialDays} 部分待补</span>
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between py-0.5">
+              <span style={{ color: 'var(--text-tertiary)' }}>上次运行</span>
+              <span className="tabular-nums">{status.lastRun ? new Date(status.lastRun).toLocaleString() : '尚未运行'}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Save */}

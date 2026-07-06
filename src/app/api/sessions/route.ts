@@ -3,7 +3,7 @@ import { ToolType } from '@/lib/parsers';
 import { getTranscriptLower } from '@/lib/parsers/scan-cache';
 import { searchTranscripts, TermDescriptor } from '@/lib/parsers/transcript-search';
 import { SessionOrigin, SessionStatus } from '@/lib/parsers/types';
-import { loadMergedSessions } from '@/lib/session-merge';
+import { HostFilter, loadMergedSessions } from '@/lib/session-merge';
 
 type SearchMatch = NonNullable<import('@/lib/parsers/types').UnifiedSession['matchedIn']>;
 
@@ -89,8 +89,13 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
     const projectFilter = searchParams.get('project');
+    // host ∈ local | mac-mini | all — defaults to 'local' so the main list shows
+    // only this machine's sessions even after a mac-mini mirror is pulled.
+    const hostParam = searchParams.get('host');
+    const hostFilter: HostFilter =
+      hostParam === 'all' || hostParam === 'mac-mini' ? hostParam : 'local';
 
-    let sessions = await loadMergedSessions(toolFilter || undefined);
+    let sessions = await loadMergedSessions(toolFilter || undefined, hostFilter);
 
     // Project (working directory) is a navigation scope from the sidebar — keep
     // it applied even while searching, so "search within this project" works.

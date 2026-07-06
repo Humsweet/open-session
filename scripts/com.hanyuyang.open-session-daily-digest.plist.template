@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchAgent 模板：每天凌晨触发「每日工作总结」调度桩 scripts/daily-digest.sh。
+  清晰命名 com.hanyuyang.open-session-daily-digest —— 在「系统设置 › 登录项」/
+  Activity Monitor / launchctl list 里一眼可认，请勿误关。
+
+  行为（方案 A：本机跑 + 催齐补漏）：
+    · 每天 00:05 触发（StartCalendarInterval）；
+    · 开机/登录也跑一次（RunAtLoad）——本机若在 00:05 关机/睡眠错过了，
+      下次开机自动补齐遗漏的天，不丢（reconcile 幂等、催齐）。
+    · 每 tick 先镜像 mac-mini，再总结昨天 + 往前回填若干天。
+
+  安装：
+    REPO="$(pwd)"   # 在仓库根目录执行
+    sed -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" \
+      scripts/com.hanyuyang.open-session-daily-digest.plist.template \
+      > ~/Library/LaunchAgents/com.hanyuyang.open-session-daily-digest.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hanyuyang.open-session-daily-digest.plist
+
+  停用：launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.hanyuyang.open-session-daily-digest.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.hanyuyang.open-session-daily-digest</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__REPO__/scripts/daily-digest.sh</string>
+  </array>
+
+  <!-- 每天 00:05 触发（略晚于 0 点，确保「昨天」已完整落盘） -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>0</integer>
+    <key>Minute</key>
+    <integer>5</integer>
+  </dict>
+
+  <!-- 开机/登录即跑一次：错过 00:05 的那天在下次开机被催齐补上 -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- 每次跑回填多少天（昨天 + 回填）；留空用脚本默认 4 -->
+  <!--
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPEN_SESSION_DIGEST_MAXDAYS</key>
+    <string>4</string>
+  </dict>
+  -->
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/open-session-daily-digest.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/open-session-daily-digest.log</string>
+</dict>
+</plist>
