@@ -4,6 +4,7 @@ import { readAllCachedSessions } from '../parsers/scan-cache';
 import { isI2mProject } from '../agent-remote';
 import { UnifiedSession } from '../parsers/types';
 import { getMacMiniMirrorRoot } from '../parsers/session-roots';
+import { isSyntheticDigestSession } from '../parsers/synthetic-sessions';
 import { getSetting } from '../db/client';
 import { runClaudeText } from '../summarizer/runtime';
 import {
@@ -74,7 +75,7 @@ function fileKeyOf(rawPath: string): string {
  * so it holds whether or not agent-remote enrichment ran) and subagent
  * transcripts. Works on an already-loaded list so one load feeds many days. */
 export function countedFrom(all: UnifiedSession[]): UnifiedSession[] {
-  return all.filter(s => !isI2mProject(s.cwd) && !isSubagentSession(s));
+  return all.filter(s => !isI2mProject(s.cwd) && !isSubagentSession(s) && !isSyntheticDigestSession(s));
 }
 
 /** Dedup sessions that appear in more than one root (e.g. live local + backup

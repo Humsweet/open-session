@@ -94,7 +94,9 @@ function buildCliInvocation(engine: Exclude<SummaryEngine, 'codex-cli'>): StdinC
     case 'claude-code':
       return {
         command: 'claude',
-        args: ['-p', '--output-format', 'text', '--model', SUMMARY_MODELS['claude-code']],
+        // See runClaudeText's comment: one-shot summarizer calls must never
+        // persist a transcript, or they pollute the main session list.
+        args: ['-p', '--no-session-persistence', '--output-format', 'text', '--model', SUMMARY_MODELS['claude-code']],
       };
     case 'copilot-cli':
       return {
@@ -337,9 +339,15 @@ export async function runClaudeText(
   model: string,
   timeoutMs = 120000
 ): Promise<string> {
+  // --no-session-persistence: this is a one-shot, throwaway prompt (digest
+  // blurb/rollup) that is never resumed. Without this flag `claude -p` still
+  // writes a full session transcript to ~/.claude/projects/<cwd>/, which then
+  // shows up in the main session list like real work — a busy backfill can
+  // spawn thousands of these (see incident 2026-07-07). This flag stops the
+  // transcript from being written at all, at the source.
   const { stdout, stderr } = await runCliWithStdin(
     'claude',
-    ['-p', '--output-format', 'text', '--model', model],
+    ['-p', '--no-session-persistence', '--output-format', 'text', '--model', model],
     prompt,
     timeoutMs
   );
