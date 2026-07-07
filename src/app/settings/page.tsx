@@ -12,27 +12,17 @@ const cliOptions: { value: SummaryCli; label: string; icon: typeof Terminal }[] 
   { value: 'gemini-cli', label: 'Gemini CLI (Gemini 2.5 Flash-Lite)', icon: Bot },
 ];
 
-// 日报模型：默认 opus（原则调优期），稳定后可降 sonnet/haiku 省 token。
+// 日报模型：默认 opus（原则调优期），稳定后可降 sonnet/haiku 省 token；也可用 Copilot 的 Sonnet 5。
 const digestModelOptions: { value: string; label: string }[] = [
   { value: 'opus', label: 'Opus（最强，制定/调优原则期用）' },
   { value: 'sonnet', label: 'Sonnet（均衡，原则稳定后）' },
   { value: 'haiku', label: 'Haiku（最省，量大时）' },
+  { value: 'copilot', label: 'Copilot (Sonnet 5)' },
 ];
-
-interface DigestStatus {
-  horizon: string;
-  yesterday: string;
-  totalDays: number;
-  doneDays: number;
-  partialDays: number;
-  pendingDays: number;
-  lastRun: string | null;
-}
 
 export default function SettingsPage() {
   const [summaryCli, setSummaryCli] = useState<SummaryCli>('claude-code');
   const [digestModel, setDigestModel] = useState<string>('opus');
-  const [status, setStatus] = useState<DigestStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -44,10 +34,6 @@ export default function SettingsPage() {
         if (data.digest_model) setDigestModel(data.digest_model);
       })
       .catch(console.error);
-    fetch('/api/daily/reconcile')
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => d && !d.error && setStatus(d))
-      .catch(() => {});
   }, []);
 
   const save = async () => {
@@ -122,7 +108,7 @@ export default function SettingsPage() {
           <CalendarDays size={14} /> 每日工作总结 (Daily Digest)
         </h2>
         <p className="text-[12px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          按价值原则对每天用 AI agent 完成的工作归类分级排序（含 mac-mini）。生成模型如下——制定/调优原则期建议用 Opus，原则稳定后可降级省 token。
+          按价值原则对每天用 AI agent 完成的工作归类分级排序。总结在日历页手动按日生成（无自动定时/回填）；此处仅设置默认生成模型——制定/调优原则期建议用 Opus，原则稳定后可降级省 token。
         </p>
 
         <div className="space-y-1.5 mb-3">
@@ -154,28 +140,6 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
-
-        {status && (
-          <div className="rounded-md p-3 text-[12px]" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-            <div className="flex justify-between py-0.5">
-              <span style={{ color: 'var(--text-tertiary)' }}>回填地平线</span>
-              <span className="tabular-nums">{status.horizon} → {status.yesterday}</span>
-            </div>
-            <div className="flex justify-between py-0.5">
-              <span style={{ color: 'var(--text-tertiary)' }}>已完成 / 总天数</span>
-              <span className="tabular-nums">
-                {status.doneDays} / {status.totalDays}
-                {status.partialDays > 0 && (
-                  <span style={{ color: 'var(--warning)' }}> · {status.partialDays} 部分待补</span>
-                )}
-              </span>
-            </div>
-            <div className="flex justify-between py-0.5">
-              <span style={{ color: 'var(--text-tertiary)' }}>上次运行</span>
-              <span className="tabular-nums">{status.lastRun ? new Date(status.lastRun).toLocaleString() : '尚未运行'}</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Save */}

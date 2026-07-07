@@ -356,3 +356,40 @@ export async function runClaudeText(
   }
   return stdout.trim();
 }
+
+/**
+ * Run a single prompt through the Copilot CLI, delivering the prompt on stdin
+ * (same quoting-safe path as runClaudeText). Uses copilot's Claude Sonnet 5 tier
+ * — verified as a valid `--model` value against the installed copilot CLI. Flags
+ * mirror the copilot-cli summary engine (`--silent --allow-all-tools`, the latter
+ * required for non-interactive scripting).
+ */
+export async function runCopilotText(prompt: string, timeoutMs = 120000): Promise<string> {
+  const { stdout, stderr } = await runCliWithStdin(
+    'copilot',
+    ['--silent', '--allow-all-tools', '--model', 'claude-sonnet-5'],
+    prompt,
+    timeoutMs
+  );
+  if (stderr && !stdout) {
+    throw new Error(stderr);
+  }
+  return stdout.trim();
+}
+
+/**
+ * Dispatch a digest text-generation call to the right CLI based on the chosen
+ * model. 'copilot' → runCopilotText (copilot's Sonnet 5); everything else is a
+ * Claude CLI alias ('opus' | 'sonnet' | 'haiku') passed straight through as the
+ * `--model` to `claude -p`.
+ */
+export async function runDigestText(
+  prompt: string,
+  modelChoice: string,
+  timeoutMs = 120000
+): Promise<string> {
+  if (modelChoice === 'copilot') {
+    return runCopilotText(prompt, timeoutMs);
+  }
+  return runClaudeText(prompt, modelChoice, timeoutMs);
+}

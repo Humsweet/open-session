@@ -3,10 +3,9 @@ import { scanAllSessions, getSessionDetail } from '../parsers';
 import { readAllCachedSessions } from '../parsers/scan-cache';
 import { isI2mProject } from '../agent-remote';
 import { UnifiedSession } from '../parsers/types';
-import { getMacMiniMirrorRoot } from '../parsers/session-roots';
 import { isSyntheticDigestSession } from '../parsers/synthetic-sessions';
 import { getSetting } from '../db/client';
-import { runClaudeText } from '../summarizer/runtime';
+import { runDigestText } from '../summarizer/runtime';
 import {
   buildSessionBlurbPrompt,
   buildDayRollupPrompt,
@@ -17,6 +16,7 @@ import {
 } from './rubric';
 import { DailyDigest, DigestItem, SourceCoverage, ValueLine, ValueTier, WorkCategory } from './types';
 import { getBlurbCache, setBlurbCache, saveDigest } from './store';
+import { readPrinciples } from './principles';
 import { exportDigestToObsidian } from './obsidian-export';
 
 /** digest 入库后，把当天镜像成 Obsidian 里的一张表。纯下游产物：写失败只告警，
@@ -144,7 +144,7 @@ async function condenseSession(s: UnifiedSession, model: string): Promise<string
     messagesPreview,
   });
 
-  const blurb = (await runClaudeText(prompt, model, BLURB_TIMEOUT_MS)).trim();
+  const blurb = (await runDigestText(prompt, model, BLURB_TIMEOUT_MS)).trim();
   if (blurb) setBlurbCache(s.id, fileKey, blurb, model);
   return blurb;
 }
@@ -201,39 +201,26 @@ const LINE_RANK: Record<ValueLine, number> = { career: 0, personal: 1, consumpti
 export interface GenerateOptions {
   /** Overrides the digest model setting (mainly for tests). */
   model?: string;
-  /** A prior scanAllSessions('all') result, so a batch (reconcile) can pay the
-   * expensive scan once and generate many days from it. Omit to scan now. */
+  /** A prior loadDigestSessions() result, so a caller can pay the expensive scan
+   * once and generate from it. Omit to scan now. */
   scannedSessions?: UnifiedSession[];
 }
 
 /**
  * Generate (or regenerate) the digest for one day and persist it. Idempotent:
  * per-session blurbs are cached, so re-running only re-does the rollup unless a
- * transcript changed. Coverage is recorded honestly — if the mac-mini mirror is
- * absent at generation time the day is stored 'partial' and completed later.
+ * transcript changed. Manual single-day generation only — no backfill, no
+ * mac-mini pending/partial machinery: a day is 'complete' if any session counts,
+ * else 'empty'. Whatever sessions are visible at generation time (local + any
+ * mounted backup roots) is what gets summarized.
  */
 export async function generateDigest(date: string, opts: GenerateOptions = {}): Promise<DailyDigest> {
   const model = opts.model || getSetting('digest_model', 'opus');
   const sessions = await collectDaySessions(date, opts.scannedSessions);
 
-  // mac-mini coverage is honest about freshness: a day is only 'covered' if the
-  // last successful mirror finished AFTER that day ended — otherwise the mirror
-  // may predate the day's mac-mini sessions, so we mark it 'pending' (→ 'partial'
-  // digest) and complete it on a later run once the mirror catches up.
-  const mirrorRoot = getMacMiniMirrorRoot();
-  const mirrorLastSuccess = (() => {
-    try {
-      return parseInt(fs.readFileSync(`${mirrorRoot}/.last-success`, 'utf8').trim(), 10) || null;
-    } catch {
-      return null;
-    }
-  })();
-  const endOfDayEpoch = Math.floor(new Date(`${date}T23:59:59`).getTime() / 1000);
-  const macMiniCovered = mirrorLastSuccess != null && mirrorLastSuccess >= endOfDayEpoch;
-  const coverage: Record<string, SourceCoverage> = {
-    local: 'covered',
-    'mac-mini': macMiniCovered ? 'covered' : 'pending',
-  };
+  // Coverage is retained in the schema but no longer drives status: local is
+  // always 'covered', and there is no pending/partial state to reconcile later.
+  const coverage: Record<string, SourceCoverage> = { local: 'covered' };
 
   if (sessions.length === 0) {
     const empty: DailyDigest = {
@@ -243,7 +230,7 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
       coverage,
       sessionCount: 0,
       model,
-      status: macMiniCovered ? 'empty' : 'partial',
+      status: 'empty',
       generatedAt: nowIso(),
       updatedAt: nowIso(),
     };
@@ -263,7 +250,7 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
     blurb: blurbs[i] || `(未能浓缩，标题: ${s.title})`,
   }));
 
-  const rollupText = await runClaudeText(buildDayRollupPrompt(date, lines), model, ROLLUP_TIMEOUT_MS);
+  const rollupText = await runDigestText(buildDayRollupPrompt(date, lines, readPrinciples()), model, ROLLUP_TIMEOUT_MS);
   const { headline, items: rawItems } = extractJson(rollupText);
 
   const items: DigestItem[] = rawItems.map(ri => {
@@ -286,10 +273,6 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
 
   items.sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || LINE_RANK[a.line] - LINE_RANK[b.line]);
 
-  const status: DailyDigest['status'] = Object.values(coverage).some(c => c === 'pending')
-    ? 'partial'
-    : 'complete';
-
   const digest: DailyDigest = {
     date,
     headline: headline || items[0]?.valuePoint || '',
@@ -297,7 +280,7 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
     coverage,
     sessionCount: sessions.length,
     model,
-    status,
+    status: 'complete',
     generatedAt: nowIso(),
     updatedAt: nowIso(),
   };

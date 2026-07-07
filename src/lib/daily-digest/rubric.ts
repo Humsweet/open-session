@@ -124,8 +124,17 @@ export interface DayRollupSessionLine {
 /**
  * 按天 rollup prompt：喂入当天所有 session 的事实浓缩 + 价值原则，
  * 让模型输出「归线 + 分档 + 排序 + 头条」的严格 JSON。
+ *
+ * @param userPrinciples 可选的「用户个人优先度校准原则」（正本在
+ *   src/lib/daily-digest/user-priority-principles.md，由用户留言蒸馏而来，见
+ *   principles.ts）。非空时作为**用户层**追加在通用 VALUE_PRINCIPLES 之后，与其
+ *   冲突时以用户层为准。这是新增层，**不改动 VALUE_PRINCIPLES 正本**。
  */
-export function buildDayRollupPrompt(date: string, sessions: DayRollupSessionLine[]): string {
+export function buildDayRollupPrompt(
+  date: string,
+  sessions: DayRollupSessionLine[],
+  userPrinciples?: string
+): string {
   const list = sessions
     .map(
       s =>
@@ -133,9 +142,16 @@ export function buildDayRollupPrompt(date: string, sessions: DayRollupSessionLin
     )
     .join('\n\n');
 
+  // 用户层：来自 principles.ts 的 readPrinciples()（运行时 fs 读的 md 正本）。
+  // 剥掉纯注释/空白后若无实质内容，则不追加，避免喂空节。
+  const userLayer =
+    userPrinciples && userPrinciples.replace(/<!--[\s\S]*?-->/g, '').trim()
+      ? `\n\n## 用户个人优先度校准原则（当与上述通用原则冲突时，以下述为准）\n${userPrinciples.trim()}`
+      : '';
+
   return `你是「每日工作价值总结」助手。下面是 ${date} 这一天用 AI agent 完成的所有工作（每条已做过事实浓缩）。请严格依据「价值原则」对它们归类、分级、排序，并给出这天的头条价值。全部用中文。
 
-${VALUE_PRINCIPLES}
+${VALUE_PRINCIPLES}${userLayer}
 
 ## 这一天的工作（共 ${sessions.length} 条）
 ${list}

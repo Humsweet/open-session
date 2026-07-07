@@ -86,6 +86,23 @@ function initSchema(db: Database.Database) {
       blurb TEXT NOT NULL,
       model TEXT NOT NULL DEFAULT ''
     );
+
+    -- User feedback on a single daily-digest item, keyed by the item's primary
+    -- session id. Holds the user's verbatim comment plus optional tier/line
+    -- corrections; later distilled into user-priority-principles.md (see
+    -- src/lib/daily-digest/{feedback-store,principles}.ts).
+    CREATE TABLE IF NOT EXISTS digest_item_feedback (
+      session_id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      item_title TEXT,
+      ai_tier TEXT,
+      ai_line TEXT,
+      ai_category TEXT,
+      comment TEXT,
+      suggested_tier TEXT,
+      suggested_line TEXT,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   const columns = db.prepare("PRAGMA table_info(session_state)").all() as Array<{ name: string }>;

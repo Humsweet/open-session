@@ -42,16 +42,6 @@ export function listDigests(): DailyDigest[] {
   return rows.map(rowToDigest);
 }
 
-/** The set of dates that already have a *complete* digest (used by the scheduler
- * to skip finished days; partial days are intentionally excluded so they get
- * retried until their pending source is captured). */
-export function completeDigestDates(): Set<string> {
-  const rows = getDb()
-    .prepare("SELECT date FROM daily_digest WHERE status IN ('complete','empty')")
-    .all() as Array<{ date: string }>;
-  return new Set(rows.map(r => r.date));
-}
-
 export function saveDigest(d: DailyDigest): void {
   getDb()
     .prepare(
