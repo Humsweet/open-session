@@ -1,5 +1,5 @@
 import { getDb } from '../db/client';
-import { DailyDigest, DigestItem, SourceCoverage } from './types';
+import { DailyDigest, DigestItem, DigestUsage, SourceCoverage } from './types';
 
 interface DigestRow {
   date: string;
@@ -11,9 +11,15 @@ interface DigestRow {
   status: string;
   generated_at: string;
   updated_at: string;
+  usage_json: string;
 }
 
 function rowToDigest(row: DigestRow): DailyDigest {
+  // usage_json defaults to '{}' for rows written before this feature existed
+  // (or a digest never re-synced since) — leave usage undefined so the UI can
+  // tell "never synced" apart from "synced, all zero".
+  const parsedUsage = JSON.parse(row.usage_json || '{}') as Partial<DigestUsage>;
+  const usage = parsedUsage.sessionsTotal !== undefined ? (parsedUsage as DigestUsage) : undefined;
   return {
     date: row.date,
     headline: row.headline,
@@ -24,6 +30,7 @@ function rowToDigest(row: DigestRow): DailyDigest {
     status: row.status as DailyDigest['status'],
     generatedAt: row.generated_at,
     updatedAt: row.updated_at,
+    usage,
   };
 }
 
@@ -46,8 +53,8 @@ export function saveDigest(d: DailyDigest): void {
   getDb()
     .prepare(
       `INSERT INTO daily_digest
-         (date, headline, items_json, coverage_json, session_count, model, status, generated_at, updated_at)
-       VALUES (@date, @headline, @items_json, @coverage_json, @session_count, @model, @status, @generated_at, @updated_at)
+         (date, headline, items_json, coverage_json, session_count, model, status, generated_at, updated_at, usage_json)
+       VALUES (@date, @headline, @items_json, @coverage_json, @session_count, @model, @status, @generated_at, @updated_at, @usage_json)
        ON CONFLICT(date) DO UPDATE SET
          headline = excluded.headline,
          items_json = excluded.items_json,
@@ -55,7 +62,8 @@ export function saveDigest(d: DailyDigest): void {
          session_count = excluded.session_count,
          model = excluded.model,
          status = excluded.status,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at,
+         usage_json = excluded.usage_json`
     )
     .run({
       date: d.date,
@@ -67,6 +75,7 @@ export function saveDigest(d: DailyDigest): void {
       status: d.status,
       generated_at: d.generatedAt,
       updated_at: d.updatedAt,
+      usage_json: JSON.stringify(d.usage || {}),
     });
 }
 

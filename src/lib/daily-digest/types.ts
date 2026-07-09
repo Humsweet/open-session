@@ -35,6 +35,17 @@ export type DigestStatus =
   | 'partial' // 至少一个源 pending（如 mac-mini 当天不可达），待补齐
   | 'empty'; // 这天没有任何计入的工作
 
+/** 当天的 token 用量 + 成本汇总（来自 ccusage，纯脚本零 LLM 调用，见 src/lib/usage）。 */
+export interface DigestUsage {
+  totalTokens: number;
+  costUsd: number;
+  /** 当天计入总结的会话里，实际拿到用量数据的会话数（分子）。 */
+  sessionsMatched: number;
+  /** 当天计入总结的会话总数（分母）——两者不等说明用量数据不完整
+   * （如 codex/copilot/gemini 尚未支持，或 ccusage 当次同步失败）。 */
+  sessionsTotal: number;
+}
+
 /** 一天的完整总结。 */
 export interface DailyDigest {
   /** 本地时区的 YYYY-MM-DD；会话按 createdAt 归属到这一天（跨午夜不迁移）。 */
@@ -48,6 +59,8 @@ export interface DailyDigest {
   status: DigestStatus;
   generatedAt: string;
   updatedAt: string;
+  /** 未定义 = 该天总结生成于本用量功能上线前，从未同步过用量。 */
+  usage?: DigestUsage;
 }
 
 /** 单会话事实浓缩的缓存内容（避免重复调用模型）。 */

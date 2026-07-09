@@ -14,10 +14,12 @@ import {
   VALUE_TIERS,
   WORK_CATEGORIES,
 } from './rubric';
-import { DailyDigest, DigestItem, SourceCoverage, ValueLine, ValueTier, WorkCategory } from './types';
+import { DailyDigest, DigestItem, DigestUsage, SourceCoverage, ValueLine, ValueTier, WorkCategory } from './types';
 import { getBlurbCache, setBlurbCache, saveDigest } from './store';
 import { readPrinciples } from './principles';
 import { exportDigestToObsidian } from './obsidian-export';
+import { syncSessionUsage } from '../usage/sync';
+import { summarizeUsage } from '../usage/store';
 
 /** digest 入库后，把当天镜像成 Obsidian 里的一张表。纯下游产物：写失败只告警，
  *  绝不影响已落库的 digest（digest 才是真相源）。 */
@@ -118,6 +120,26 @@ export async function collectDaySessions(date: string, all?: UnifiedSession[]): 
   return countedFrom(scanned)
     .filter(s => localDateKey(s.createdAt) === date)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/**
+ * Backfill `usage` on a digest generated before token/cost tracking existed
+ * (usage undefined). Pure data — re-collects that day's sessions (cache read,
+ * no LLM), syncs the ccusage cache, sums it, and persists so this only ever
+ * runs once per historical day. A no-op if usage is already present. Pass a
+ * prior `loadDigestSessions()` result to reuse one scan across many days (see
+ * the /api/daily list route).
+ */
+export async function ensureDigestUsage(digest: DailyDigest, all?: UnifiedSession[]): Promise<DailyDigest> {
+  if (digest.usage) return digest;
+
+  const sessions = await collectDaySessions(digest.date, all);
+  await syncSessionUsage(sessions);
+  const usage: DigestUsage = { ...summarizeUsage(sessions.map(s => s.id)), sessionsTotal: sessions.length };
+
+  const withUsage: DailyDigest = { ...digest, usage };
+  saveDigest(withUsage);
+  return withUsage;
 }
 
 async function condenseSession(s: UnifiedSession, model: string): Promise<string> {
@@ -233,13 +255,19 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
       status: 'empty',
       generatedAt: nowIso(),
       updatedAt: nowIso(),
+      usage: { totalTokens: 0, costUsd: 0, sessionsMatched: 0, sessionsTotal: 0 },
     };
     saveDigest(empty);
     mirrorToObsidian(empty);
     return empty;
   }
 
-  const blurbs = await mapLimit(sessions, BLURB_CONCURRENCY, s => condenseSession(s, model));
+  // ccusage 同步是纯脚本(零 LLM 调用),与 blurb 生成互不依赖,并发跑省墙钟时间。
+  // force:true——这正是用户点「总结当日」的那一刻,数据要新鲜。
+  const [blurbs] = await Promise.all([
+    mapLimit(sessions, BLURB_CONCURRENCY, s => condenseSession(s, model)),
+    syncSessionUsage(sessions, { force: true }),
+  ]);
 
   const lines: DayRollupSessionLine[] = sessions.map((s, i) => ({
     index: i,
@@ -273,6 +301,8 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
 
   items.sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || LINE_RANK[a.line] - LINE_RANK[b.line]);
 
+  const usage: DigestUsage = { ...summarizeUsage(sessions.map(s => s.id)), sessionsTotal: sessions.length };
+
   const digest: DailyDigest = {
     date,
     headline: headline || items[0]?.valuePoint || '',
@@ -283,6 +313,7 @@ export async function generateDigest(date: string, opts: GenerateOptions = {}): 
     status: 'complete',
     generatedAt: nowIso(),
     updatedAt: nowIso(),
+    usage,
   };
   saveDigest(digest);
   mirrorToObsidian(digest);

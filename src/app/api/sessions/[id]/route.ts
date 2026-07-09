@@ -4,6 +4,8 @@ import { getDb } from '@/lib/db/client';
 import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
 import { SessionStatus } from '@/lib/parsers/types';
+import { getSessionUsage } from '@/lib/usage/store';
+import { syncSessionUsage } from '@/lib/usage/sync';
 
 function parseAsUtc(s: string): number {
   if (s && !s.endsWith('Z') && !s.includes('+') && !s.includes('T')) {
@@ -69,6 +71,14 @@ export async function GET(
       detail.pinned = Boolean(state.pinned);
     } else if (forcedClosed) {
       detail.status = 'closed';
+    }
+
+    // Best-effort, throttled background refresh — never await a subprocess call
+    // here; serve whatever's already cached, next view picks up anything new.
+    void syncSessionUsage([detail]);
+    const usage = getSessionUsage(detail.id);
+    if (usage) {
+      detail.usage = { totalTokens: usage.totalTokens, costUsd: usage.costUsd, model: usage.model };
     }
 
     return NextResponse.json(detail);

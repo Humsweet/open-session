@@ -37,6 +37,13 @@ export interface UnifiedSession {
   slackThreadTs?: string;
   slackChannelId?: string;
   slackUserId?: string;
+  /** Token usage + cost from ccusage (see src/lib/usage), when cached. Claude
+   * Code sessions only for now — see the mapping note in ccusage-client.ts. */
+  usage?: {
+    totalTokens: number;
+    costUsd: number;
+    model: string;
+  };
 }
 
 export interface SessionMessage {

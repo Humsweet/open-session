@@ -103,6 +103,25 @@ function initSchema(db: Database.Database) {
       suggested_line TEXT,
       updated_at TEXT NOT NULL
     );
+
+    -- Per-session token usage + cost, sourced from ccusage (pure script, zero
+    -- LLM calls — see src/lib/usage). file_key is "mtimeMs:size" like the other
+    -- caches, but here it only decides whether a re-sync is worth attempting; a
+    -- row is never deleted once written, since ccusage can only see live
+    -- transcript files (Claude Code prunes sessions after ~30 days) and this
+    -- cache is the permanent record once a session's cost has been computed.
+    CREATE TABLE IF NOT EXISTS session_usage (
+      session_id TEXT PRIMARY KEY,
+      file_key TEXT NOT NULL,
+      model TEXT NOT NULL DEFAULT '',
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      synced_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
   `);
 
   const columns = db.prepare("PRAGMA table_info(session_state)").all() as Array<{ name: string }>;
@@ -122,6 +141,12 @@ function initSchema(db: Database.Database) {
   }
   if (!hasPinnedAt) {
     db.exec("ALTER TABLE session_state ADD COLUMN pinned_at TEXT");
+  }
+
+  const digestColumns = db.prepare("PRAGMA table_info(daily_digest)").all() as Array<{ name: string }>;
+  const hasUsageJson = digestColumns.some(column => column.name === 'usage_json');
+  if (!hasUsageJson) {
+    db.exec("ALTER TABLE daily_digest ADD COLUMN usage_json TEXT NOT NULL DEFAULT '{}'");
   }
 
   // Migrate existing datetime('now') values (no timezone) to ISO 8601 UTC

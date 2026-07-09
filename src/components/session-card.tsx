@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { OriginBadge, PinBadge, ToolBadge, StatusBadge, ArchivedBadge } from './tool-icon';
 import { extractSummaryOverview, extractSummaryTitle } from '@/lib/summarizer/summary-format';
-import { MessageSquare, Folder, Clock, MoreHorizontal, CircleDot, CircleOff, Trash2, Sparkles, Check, Pencil, X, Pin, PinOff } from 'lucide-react';
+import { formatUsd } from '@/lib/usage/format';
+import { MessageSquare, Folder, Clock, MoreHorizontal, CircleDot, CircleOff, Trash2, Sparkles, Check, Pencil, X, Pin, PinOff, Coins } from 'lucide-react';
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -139,7 +140,7 @@ export function SessionCard({
         </div>
       )}
 
-      <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
         <PinBadge pinned={session.pinned} />
         <ToolBadge tool={session.tool} />
         <OriginBadge origin={session.origin} />
@@ -147,17 +148,26 @@ export function SessionCard({
         <StatusBadge status={session.status} />
         {session.matchedIn && (
           <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+            className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 whitespace-nowrap"
             style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)' }}
             title="Where your search query matched"
           >
             {{ title: 'Matched: title', summary: 'Matched: summary', message: 'Matched: message', path: 'Matched: path', transcript: 'Matched: transcript' }[session.matchedIn]}
           </span>
         )}
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
           <MessageSquare size={11} />
           {session.messageCount}
         </span>
+        {session.usage && session.usage.totalTokens > 0 && (
+          <span
+            className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+            title={`${session.usage.model} · ${session.usage.totalTokens.toLocaleString()} tokens`}
+          >
+            <Coins size={11} />
+            {formatUsd(session.usage.costUsd)}
+          </span>
+        )}
         {session.cwd && (
           <span
             className="flex items-center gap-1 truncate max-w-64 px-1.5 py-0.5 rounded font-medium"
@@ -168,7 +178,7 @@ export function SessionCard({
             {session.cwd.split(/[/\\]/).slice(-2).join('/')}
           </span>
         )}
-        <span className="flex items-center gap-1 ml-auto">
+        <span className="flex items-center gap-1 ml-auto flex-shrink-0 whitespace-nowrap">
           <Clock size={11} />
           {timeAgo(session.updatedAt)}
         </span>

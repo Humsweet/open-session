@@ -4,6 +4,8 @@ import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { HostFilter } from '@/lib/parsers/session-roots';
 import { persistSessionStatus, persistSessionsClosed } from '@/lib/session-state';
 import { isSummaryHelperSession } from '@/lib/summarizer/session-kind';
+import { getSessionUsageMany } from '@/lib/usage/store';
+import { syncSessionUsage } from '@/lib/usage/sync';
 
 // Re-exported so existing importers (e.g. the /api/sessions route) keep a stable
 // path; the canonical definition lives in parsers/session-roots.ts alongside host.
@@ -65,7 +67,7 @@ export async function loadMergedSessions(toolFilter?: ToolType, host: HostFilter
   }>;
   const stateMap = new Map(states.map(s => [s.session_id, s]));
 
-  return scanned.map(s => {
+  const merged = scanned.map(s => {
     const state = stateMap.get(s.id);
     const forcedClosed = isSummaryHelperSession(s);
     const autoReopened =
@@ -85,5 +87,18 @@ export async function loadMergedSessions(toolFilter?: ToolType, host: HostFilter
       summaryTitleApplied: Boolean(state?.summary_title_applied),
       pinned: Boolean(state?.pinned),
     };
+  });
+
+  // Best-effort background refresh (throttled, not awaited — never slow down
+  // this response for a subprocess call). Whatever it finds lands in the cache
+  // for the *next* load; this response serves whatever is already cached below.
+  void syncSessionUsage(merged);
+
+  const usageMap = getSessionUsageMany(merged.map(s => s.id));
+  return merged.map(s => {
+    const usage = usageMap.get(s.id);
+    return usage
+      ? { ...s, usage: { totalTokens: usage.totalTokens, costUsd: usage.costUsd, model: usage.model } }
+      : s;
   });
 }

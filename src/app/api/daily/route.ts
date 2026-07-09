@@ -1,21 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDigest, listDigests } from '@/lib/daily-digest/store';
-import { generateDigest } from '@/lib/daily-digest/generate';
+import { generateDigest, ensureDigestUsage, loadDigestSessions } from '@/lib/daily-digest/generate';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MODELS = ['opus', 'sonnet', 'haiku', 'copilot'] as const;
 
 /** GET /api/daily            → all stored digests, newest day first
- *  GET /api/daily?date=YYYY-MM-DD → that day's digest (or null) */
+ *  GET /api/daily?date=YYYY-MM-DD → that day's digest (or null)
+ *  Backfills `usage` on any digest generated before token/cost tracking
+ *  existed — pure cache reads + ccusage, never an LLM call, so this is free
+ *  and only ever needs to run once per historical day (see ensureDigestUsage). */
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get('date');
   if (date) {
     if (!DATE_RE.test(date)) {
       return NextResponse.json({ error: 'invalid date' }, { status: 400 });
     }
-    return NextResponse.json({ digest: getDigest(date) });
+    const digest = getDigest(date);
+    return NextResponse.json({ digest: digest ? await ensureDigestUsage(digest) : null });
   }
-  return NextResponse.json({ digests: listDigests() });
+
+  const digests = listDigests();
+  const scanned = digests.some(d => !d.usage) ? await loadDigestSessions() : undefined;
+  const filled = await Promise.all(digests.map(d => ensureDigestUsage(d, scanned)));
+  return NextResponse.json({ digests: filled });
 }
 
 /** POST /api/daily { date?, model? } → (re)generate and persist that day's

@@ -8,8 +8,9 @@ import { OriginBadge, PinBadge, ToolBadge, StatusBadge, ArchivedBadge } from './
 import { SimpleMarkdown } from './simple-markdown';
 import { useProgressive } from './use-progressive';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
+import { formatUsd } from '@/lib/usage/format';
 import {
-  ArrowLeft, MessageSquare, Folder, Clock, Sparkles,
+  ArrowLeft, MessageSquare, Folder, Clock, Sparkles, Coins,
   Copy, ChevronDown, ChevronRight, Pencil, Check, X, CircleDot, CircleOff, Trash2, Pin, PinOff
 } from 'lucide-react';
 import {
@@ -478,21 +479,29 @@ export function SessionDetailView({ id }: { id: string }) {
               </button>
             </div>
           )}
-          <div className="flex items-center gap-3 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
             <PinBadge pinned={session.pinned} />
             <ToolBadge tool={session.tool} />
             <OriginBadge origin={session.origin} />
             <ArchivedBadge archived={session.archived} />
             <StatusBadge status={session.status} />
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
               <MessageSquare size={12} /> {session.messageCount} messages
             </span>
+            {session.usage && session.usage.totalTokens > 0 && (
+              <span
+                className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                title={`${session.usage.model} · ${session.usage.totalTokens.toLocaleString()} tokens`}
+              >
+                <Coins size={12} /> {formatUsd(session.usage.costUsd)}
+              </span>
+            )}
             {session.cwd && (
               <span className="flex items-center gap-1 truncate max-w-64">
                 <Folder size={12} /> {session.cwd}
               </span>
             )}
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
               <Clock size={12} /> {timeAgo(session.updatedAt)}
             </span>
           </div>

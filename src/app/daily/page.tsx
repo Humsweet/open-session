@@ -12,11 +12,13 @@ import {
   Sparkles,
   MessageSquare,
   ListChecks,
+  Coins,
   X,
 } from 'lucide-react';
 import type { DailyDigest, DigestItem, ValueTier, ValueLine, WorkCategory } from '@/lib/daily-digest/types';
 import { CATEGORY_LABELS, LINE_LABELS } from '@/lib/daily-digest/rubric';
 import { DigestCalendar, toKey } from '@/components/digest-calendar';
+import { formatTokens, formatUsd } from '@/lib/usage/format';
 
 /** 用户对某条 item 的批注（留言 + 可选的档/线纠正）。与 GET/POST /api/daily/feedback 契约一致。 */
 interface ItemFeedback {
@@ -509,7 +511,7 @@ function ModelPicker({
             type="button"
             disabled={disabled}
             onClick={() => onChange(opt.value)}
-            className="px-2.5 py-1 rounded-md border text-[12px] font-medium transition-colors"
+            className="px-2.5 py-2 rounded-md border text-[12px] font-medium transition-colors"
             style={{
               backgroundColor: selected ? 'var(--accent-subtle)' : 'var(--bg-tertiary)',
               borderColor: selected ? 'var(--accent)' : 'var(--border-subtle)',
@@ -585,8 +587,24 @@ function DetailPanel({
             {date}
           </span>
           {hasDigest && (
-            <span className="text-[11px] tabular-nums ml-auto" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+            <span
+              className="text-[11px] tabular-nums ml-auto inline-flex items-center gap-1"
+              style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}
+            >
               {digest!.sessionCount} 会话 · {digest!.model}
+              {digest!.usage && digest!.usage.totalTokens > 0 && (
+                <span
+                  className="inline-flex items-center gap-1"
+                  title={`${digest!.usage.sessionsMatched}/${digest!.usage.sessionsTotal} 会话有用量数据${
+                    digest!.usage.sessionsMatched < digest!.usage.sessionsTotal ? '(其它工具/远程主机暂不支持追踪)' : ''
+                  }`}
+                >
+                  · <Coins size={11} /> {formatTokens(digest!.usage.totalTokens)} tok · {formatUsd(digest!.usage.costUsd)}
+                  {digest!.usage.sessionsMatched < digest!.usage.sessionsTotal && (
+                    <AlertTriangle size={10} style={{ color: 'var(--warning)' }} />
+                  )}
+                </span>
+              )}
             </span>
           )}
         </div>
