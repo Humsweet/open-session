@@ -20,3 +20,19 @@ export function isSyntheticDigestSession(s: Pick<UnifiedSession, 'firstUserMessa
   const msg = s.firstUserMessage || '';
   return SYNTHETIC_PROMPT_PREFIXES.some(prefix => msg.startsWith(prefix));
 }
+
+/**
+ * RepoMonitor (the menu-bar git app) generates every auto-push commit message
+ * by spawning a headless `claude -p --model haiku` call, pinned to a dedicated
+ * working directory `~/.config/repo-monitor/commit-msg` for exactly this
+ * reason: so its throwaway transcripts are recognisable by cwd and can be kept
+ * out of the session list. They are pure machinery, never real work. Match by
+ * cwd suffix (rather than an absolute path) so it holds across machines/users
+ * without needing to resolve $HOME here.
+ */
+const REPO_MONITOR_COMMIT_CWD_SUFFIX = '/.config/repo-monitor/commit-msg';
+
+export function isRepoMonitorCommitSession(s: Pick<UnifiedSession, 'cwd'>): boolean {
+  const cwd = (s.cwd || '').replace(/\/+$/, '');
+  return cwd.endsWith(REPO_MONITOR_COMMIT_CWD_SUFFIX);
+}
