@@ -181,3 +181,7 @@ export function geminiConversationRoots(): SessionRoot[] {
 export function geminiTmpRoots(): SessionRoot[] {
   return rootsFor(['.gemini', 'tmp'], ['gemini', 'tmp']);
 }
+
+export function grokRoots(): SessionRoot[] {
+  return rootsFor(['.grok', 'sessions'], ['grok', 'sessions']);
+}

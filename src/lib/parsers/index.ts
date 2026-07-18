@@ -2,6 +2,7 @@ import { ClaudeParser } from './claude-parser';
 import { CopilotParser } from './copilot-parser';
 import { CodexParser } from './codex-parser';
 import { GeminiParser } from './gemini-parser';
+import { GrokParser } from './grok-parser';
 import { UnifiedSession, SessionDetail, ToolType } from './types';
 import { HostFilter } from './session-roots';
 import { enrichSessionDetailWithAgentRemote, enrichSessionsWithAgentRemote } from '../agent-remote';
@@ -12,6 +13,7 @@ const parsers = {
   'copilot-cli': new CopilotParser(),
   'codex-cli': new CodexParser(),
   'gemini-cli': new GeminiParser(),
+  'grok-cli': new GrokParser(),
 };
 
 function pickPreferredSession(current: UnifiedSession | undefined, candidate: UnifiedSession): UnifiedSession {
@@ -74,6 +76,7 @@ export async function getSessionLite(sessionId: string): Promise<UnifiedSession 
     copilot: 'copilot-cli',
     codex: 'codex-cli',
     gemini: 'gemini-cli',
+    grok: 'grok-cli',
   };
   const toolType = toolMap[tool];
   if (!toolType) return null;
@@ -88,6 +91,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
     copilot: 'copilot-cli',
     codex: 'codex-cli',
     gemini: 'gemini-cli',
+    grok: 'grok-cli',
   };
   const toolType = toolMap[tool];
   if (!toolType || !parsers[toolType]) return null;

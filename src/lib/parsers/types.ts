@@ -1,6 +1,6 @@
 import type { HostFilter } from './session-roots';
 
-export type ToolType = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli';
+export type ToolType = 'claude-code' | 'copilot-cli' | 'codex-cli' | 'gemini-cli' | 'grok-cli';
 export type SessionStatus = 'open' | 'closed' | 'dropped';
 export type SessionOrigin = 'local' | 'slack-bot' | 'i2m';
 

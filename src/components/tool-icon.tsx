@@ -9,6 +9,7 @@ const toolConfig: Record<ToolType, { label: string; color: string; icon: typeof 
   'copilot-cli': { label: 'Copilot', color: '#6d28d9', icon: Sparkles },
   'codex-cli': { label: 'Codex', color: '#065f46', icon: Cpu },
   'gemini-cli': { label: 'Gemini', color: '#1d4ed8', icon: Bot },
+  'grok-cli': { label: 'Grok', color: '#7c3aed', icon: Sparkles },
 };
 
 export function ToolIcon({ tool, size = 16 }: { tool: ToolType; size?: number }) {
