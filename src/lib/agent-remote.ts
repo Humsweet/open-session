@@ -74,21 +74,19 @@ function getRealSessionId(sessionId: string): string {
 }
 
 /**
- * Repo folder name for the GrokStuff project, which gets its own "i2m" tab.
- * Matched by folder name (not absolute path) so the same rule works on both the
- * macOS and Windows checkouts. This single cwd rule also covers the GrokStuff
- * background harness (`.auto/process.sh`), which `cd`s into the repo before
- * invoking `claude` — so script-spawned and interactive sessions both land here.
+ * Repo folder names that belong to the i2m tab. Matched by folder name (not
+ * absolute path) so the same rule works on both macOS and Windows checkouts.
+ * GrokStuff: original project name. i2m: current repo name.
  */
-const I2M_PROJECT_DIR = 'GrokStuff';
+const I2M_PROJECT_DIRS = ['GrokStuff', 'i2m'];
 
 export function isI2mProject(cwd: string | undefined | null): boolean {
   if (!cwd) return false;
   const norm = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
-  return (
-    norm === I2M_PROJECT_DIR ||
-    norm.endsWith('/' + I2M_PROJECT_DIR) ||
-    norm.includes('/' + I2M_PROJECT_DIR + '/')
+  return I2M_PROJECT_DIRS.some(dir =>
+    norm === dir ||
+    norm.endsWith('/' + dir) ||
+    norm.includes('/' + dir + '/')
   );
 }
 
