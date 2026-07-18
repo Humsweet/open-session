@@ -10,6 +10,7 @@ const tools: { value: ToolType | 'all'; label: string }[] = [
   { value: 'copilot-cli', label: 'Copilot' },
   { value: 'codex-cli', label: 'Codex' },
   { value: 'gemini-cli', label: 'Gemini' },
+  { value: 'grok-cli', label: 'Grok' },
 ];
 
 const extendedStatuses: { value: SessionStatus | 'all'; label: string }[] = [
