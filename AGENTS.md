@@ -78,8 +78,18 @@ lsof -nP -iTCP:3001 -sTCP:LISTEN                # 确认 3001 在监听
 
 Claude Code 默认 `cleanupPeriodDays=30`,启动时自动删 30 天前的 session transcript;
 Codex / Gemini 等也各有清理。`scripts/backup-sessions.sh` 在清理删掉之前,把各源
-**只增不删、幂等增量**地镜像到外置 SSD,让历史永不丢失,并能在 open-session 里
+**只增不删、幂等增量**地镜像到备份盘,让历史永不丢失,并能在 open-session 里
 以「Archived (SSD)」来源回看。
+
+> **⚠️ 备份根说明(机器相关 · 传输不定)**:`/Volumes/Extreme SSD/…` 指向的物理硬盘接在
+> mac-mini 上。**在 mac-mini 本机是本地外置 SSD;在任何其他机器上都是经网络远程挂载**——
+> 网络路径不定(局域网 SMB、Tailscale、或断开),**响应快慢无保证,随时可能卡住**。因此代码
+> 必须把这个备份根**当作随时可能停顿的远程挂载**来对待:绝不在请求路径上对它做阻塞式同步 fs,
+> 否则挂载一卡会焊死单线程 server(2026-07-23 真实踩坑:一次网络挂载停顿把整个 server——含
+> 静态首页——全部卡成无限等待、node 0% CPU;用 `sample <pid>` 抓到卡在 `node::fs::Stat`)。
+> 正本见 `src/lib/parsers/session-roots.ts` 的异步 liveness 探测(`fs.promises.readdir` race
+> 1.5 秒超时,卡住/超时/未挂载一律判不可用并跳过归档,请求路径永不在挂载上做同步 fs)。
+> 远程挂载不会自动重挂,需要时手动重连。
 
 - 备份脚本:`scripts/backup-sessions.sh`(zsh,可独立于 node 运行,供定时器调用)
 - 备份根:`/Volumes/Extreme SSD/Backup/AI Agent Sessions`(可用环境变量
