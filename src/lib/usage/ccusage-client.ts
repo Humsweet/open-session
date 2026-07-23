@@ -72,10 +72,19 @@ export interface CcusageSessionRow {
 /**
  * Pull every detected agent session's token usage + cost in one shot. Pure
  * script — reads local transcript files and does arithmetic against a pricing
- * table, never an LLM. Measured at ~0.5-1s for this machine's full history
- * (ccusage only scans each tool's live/default session directory, not our
- * external-SSD backup archive, so the working set stays small); no
- * --since/--until narrowing needed.
+ * table, never an LLM. ccusage only scans each tool's live/default session
+ * directory, not our external-SSD backup archive, so the working set stays
+ * small; no --since/--until narrowing needed.
+ *
+ * Timeout is a generous 90s (not the runCcusage 20s default): the online
+ * pricing path this deliberately keeps (see the --offline note below) now
+ * fetches the pricing DB per call and runs a variable ~10-31s on this machine,
+ * up from the ~1s it took when this was first built. The old 20s cap was
+ * calibrated for that ~1s latency and started killing every sync once online
+ * pricing slowed down — leaving the session_usage cache frozen and cards
+ * blank. This call is fire-and-forget and 5-min-throttled (see sync.ts), so a
+ * slow background subprocess costs nothing; a too-short timeout costs all the
+ * data. 90s leaves ample margin over the observed 31s worst case.
  *
  * Deliberately NOT passing `--offline`: verified it serves a stale bundled
  * pricing snapshot that computes $0 cost for a brand-new model id
@@ -93,7 +102,7 @@ export interface CcusageSessionRow {
  * real codex/copilot/gemini session data anyway (see src/lib/usage/sync.ts).
  */
 export async function fetchCcusageSessions(): Promise<CcusageSessionRow[]> {
-  const stdout = await runCcusage(['session', '--json']);
+  const stdout = await runCcusage(['session', '--json'], 90000);
   const parsed = JSON.parse(stdout) as { session?: CcusageSessionRow[] };
   return parsed.session ?? [];
 }

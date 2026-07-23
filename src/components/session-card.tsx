@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { SessionStatus, UnifiedSession } from '@/lib/parsers/types';
 import { OriginBadge, PinBadge, ToolBadge, StatusBadge, ArchivedBadge } from './tool-icon';
 import { extractSummaryOverview, extractSummaryTitle } from '@/lib/summarizer/summary-format';
-import { formatUsd } from '@/lib/usage/format';
+import { formatUsd, formatTokens } from '@/lib/usage/format';
 import { MessageSquare, Folder, Clock, MoreHorizontal, CircleDot, CircleOff, Trash2, Sparkles, Check, Pencil, X, Pin, PinOff, Coins } from 'lucide-react';
 
 function timeAgo(dateStr: string): string {
@@ -162,10 +162,10 @@ export function SessionCard({
         {session.usage && session.usage.totalTokens > 0 && (
           <span
             className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
-            title={`${session.usage.model} · ${session.usage.totalTokens.toLocaleString()} tokens`}
+            title={`${session.usage.model} · ${session.usage.totalTokens.toLocaleString()} tokens · ${formatUsd(session.usage.costUsd)}`}
           >
             <Coins size={11} />
-            {formatUsd(session.usage.costUsd)}
+            {formatTokens(session.usage.totalTokens)} tokens · {formatUsd(session.usage.costUsd)}
           </span>
         )}
         {session.cwd && (

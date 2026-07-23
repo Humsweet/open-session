@@ -92,23 +92,79 @@ export function selectRoots(
 }
 
 /**
- * Is the backup volume actually mounted? For a /Volumes/<Name>/... root we
- * require the volume mount point itself to exist as a directory — never
- * auto-create it. An unmounted SSD must yield "no archive roots", never a
- * phantom empty directory that looks like an empty (data-losing) archive.
+ * Is the backup volume actually available? For a /Volumes/<Name>/... root the
+ * answer must NEVER be computed with a synchronous fs call, because that mount
+ * can be a **network share** (this machine's default backup root is an SMB mount
+ * of the mac-mini's SSD, not a local disk). A synchronous stat/readdir on a
+ * flaky or stalled network mount blocks uninterruptibly, and since the server is
+ * single-threaded that one blocked syscall wedges the ENTIRE process — every
+ * request, including the static home page, hangs forever at 0% CPU. This is the
+ * exact failure that used to freeze the whole app whenever the share hiccuped.
+ *
+ * So for /Volumes roots we return a CACHED liveness flag that is refreshed by an
+ * async, timeout-bounded, deep probe running off the event loop (see
+ * refreshBackupLiveness). The request path here does zero network fs: it reads
+ * the flag and, if stale, kicks a background probe for next time. A share that
+ * is unmounted, unreachable, or merely slow all resolve to "not available" — the
+ * same graceful "no archive roots" degradation as a physically-absent SSD, never
+ * a hang. When the share is healthy the flag flips true within one probe and the
+ * archive reappears.
+ *
+ * Non-/Volumes roots (test paths, or a genuinely local backup dir) keep the
+ * cheap synchronous check — local-disk stat never blocks.
  */
+const BACKUP_PROBE_TTL_MS = 30 * 1000;
+const BACKUP_PROBE_TIMEOUT_MS = 1500;
+
+let backupLive = false;
+let backupCheckedAt = 0;
+let backupProbeInFlight = false;
+
+/**
+ * Deep async liveness probe for the network backup root. `readdir` (not a
+ * shallow mount-point stat) so we exercise the share's directory metadata the
+ * parser will actually walk — a share that answers the mount point but stalls on
+ * deeper paths is correctly classified as NOT live. Timeout only decides how
+ * long we WAIT before recording "not responsive"; if the readdir is still
+ * outstanding we leave the in-flight guard set until it truly settles, so a
+ * wedged share leaks at most one libuv worker, never one per TTL.
+ */
+async function refreshBackupLiveness(backupRoot: string): Promise<void> {
+  try {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<'__timeout__'>(resolve => {
+      timer = setTimeout(() => resolve('__timeout__'), BACKUP_PROBE_TIMEOUT_MS);
+    });
+    const probe = fs.promises.readdir(backupRoot).then(
+      () => '__ok__' as const,
+      () => '__err__' as const
+    );
+    const winner = await Promise.race([probe, timeout]);
+    if (timer) clearTimeout(timer);
+    backupLive = winner === '__ok__';
+    backupCheckedAt = Date.now();
+    // If we timed out, the readdir is still pending; wait for it to settle before
+    // allowing another probe so at most one probe is ever outstanding.
+    if (winner === '__timeout__') await probe.catch(() => undefined);
+  } finally {
+    backupProbeInFlight = false;
+  }
+}
+
+function ensureBackupLiveness(backupRoot: string): void {
+  if (backupProbeInFlight) return;
+  if (Date.now() - backupCheckedAt < BACKUP_PROBE_TTL_MS) return;
+  backupProbeInFlight = true;
+  void refreshBackupLiveness(backupRoot);
+}
+
 function backupRootAvailable(backupRoot: string): boolean {
   if (backupRoot.startsWith('/Volumes/')) {
-    const rest = backupRoot.slice('/Volumes/'.length);
-    const volumeName = rest.split('/')[0];
-    const volumeMount = path.join('/Volumes', volumeName);
-    try {
-      return fs.statSync(volumeMount).isDirectory();
-    } catch {
-      return false;
-    }
+    ensureBackupLiveness(backupRoot);
+    return backupLive; // cached; never a synchronous fs call on the mount
   }
-  // Non-/Volumes root (e.g. a test path): just check it exists.
+  // Non-/Volumes root (e.g. a test path, or a local backup dir): local-disk stat
+  // never blocks, so the cheap synchronous check is safe here.
   try {
     return fs.statSync(backupRoot).isDirectory();
   } catch {

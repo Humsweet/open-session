@@ -8,7 +8,7 @@ import { OriginBadge, PinBadge, ToolBadge, StatusBadge, ArchivedBadge } from './
 import { SimpleMarkdown } from './simple-markdown';
 import { useProgressive } from './use-progressive';
 import { extractSummaryTitle, stripSummaryTitle } from '@/lib/summarizer/summary-format';
-import { formatUsd } from '@/lib/usage/format';
+import { formatUsd, formatTokens } from '@/lib/usage/format';
 import {
   ArrowLeft, MessageSquare, Folder, Clock, Sparkles, Coins,
   Copy, ChevronDown, ChevronRight, Pencil, Check, X, CircleDot, CircleOff, Trash2, Pin, PinOff
@@ -491,9 +491,9 @@ export function SessionDetailView({ id }: { id: string }) {
             {session.usage && session.usage.totalTokens > 0 && (
               <span
                 className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
-                title={`${session.usage.model} · ${session.usage.totalTokens.toLocaleString()} tokens`}
+                title={`${session.usage.model} · ${session.usage.totalTokens.toLocaleString()} tokens · ${formatUsd(session.usage.costUsd)}`}
               >
-                <Coins size={12} /> {formatUsd(session.usage.costUsd)}
+                <Coins size={12} /> {formatTokens(session.usage.totalTokens)} tokens · {formatUsd(session.usage.costUsd)}
               </span>
             )}
             {session.cwd && (
@@ -622,6 +622,15 @@ export function SessionDetailView({ id }: { id: string }) {
               {session.origin === 'slack-bot' ? 'Slack Bot' : session.origin === 'i2m' ? 'i2m' : 'Local'}
             </span>
           </div>
+          {session.usage && session.usage.totalTokens > 0 && (
+            <div className="flex items-start justify-between gap-3">
+              <span style={{ color: 'var(--text-tertiary)' }}>Token usage</span>
+              <span className="text-right" style={{ color: 'var(--text-primary)' }}>
+                {session.usage.totalTokens.toLocaleString()} tokens · {formatUsd(session.usage.costUsd)}
+                <span style={{ color: 'var(--text-tertiary)' }}> · {session.usage.model}</span>
+              </span>
+            </div>
+          )}
           {session.agentSource && (
             <div className="flex items-start justify-between gap-3">
               <span style={{ color: 'var(--text-tertiary)' }}>Agent source</span>
